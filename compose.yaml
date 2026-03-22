@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: smallworld-postgres
+    environment:
+      POSTGRES_DB: smallworld
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d smallworld"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  redis:
+    image: redis:7.4-alpine
+    container_name: smallworld-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+
+volumes:
+  postgres_data:
