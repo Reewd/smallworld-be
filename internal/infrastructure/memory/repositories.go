@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"errors"
+	"sort"
 	"sync"
 	"time"
 
@@ -127,7 +128,7 @@ func (s *Store) FindDriverSessionByID(_ context.Context, id string) (domain.Driv
 	defer s.mu.RUnlock()
 	session, ok := s.driverSessions[id]
 	if !ok {
-		return domain.DriverSession{}, errors.New("driver session not found")
+		return domain.DriverSession{}, domain.ErrDriverSessionNotFound
 	}
 	return session, nil
 }
@@ -142,6 +143,32 @@ func (s *Store) ListActive(_ context.Context) ([]domain.DriverSession, error) {
 		}
 	}
 	return sessions, nil
+}
+
+func (s *Store) FindCurrentDriverSessionByDriverID(_ context.Context, driverID string) (domain.DriverSession, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var candidates []domain.DriverSession
+	for _, session := range s.driverSessions {
+		if session.DriverID != driverID || session.State == domain.DriverSessionStateEnded {
+			continue
+		}
+		candidates = append(candidates, session)
+	}
+	if len(candidates) == 0 {
+		return domain.DriverSession{}, domain.ErrDriverSessionNotFound
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		left := driverSessionStatePriority(candidates[i].State)
+		right := driverSessionStatePriority(candidates[j].State)
+		if left != right {
+			return left < right
+		}
+		return candidates[i].UpdatedAt.After(candidates[j].UpdatedAt)
+	})
+	return candidates[0], nil
 }
 
 func (s *Store) SaveTripDemand(_ context.Context, demand domain.TripDemand) error {
@@ -212,6 +239,32 @@ func (s *Store) ListPendingRideOffers(_ context.Context) ([]domain.RideOffer, er
 	return offers, nil
 }
 
+func (s *Store) ListPendingRideOffersByDriverID(_ context.Context, driverID string) ([]domain.RideOffer, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sessionIDs := map[string]struct{}{}
+	for _, session := range s.driverSessions {
+		if session.DriverID == driverID {
+			sessionIDs[session.ID] = struct{}{}
+		}
+	}
+
+	var offers []domain.RideOffer
+	for _, offer := range s.rideOffers {
+		if offer.State != domain.RideOfferStatePending {
+			continue
+		}
+		if _, ok := sessionIDs[offer.DriverSessionID]; ok {
+			offers = append(offers, offer)
+		}
+	}
+	sort.Slice(offers, func(i, j int) bool {
+		return offers[i].CreatedAt.After(offers[j].CreatedAt)
+	})
+	return offers, nil
+}
+
 func (s *Store) TransitionPendingRideOffer(_ context.Context, offerID string, next domain.RideOfferState, updatedAt time.Time) (domain.RideOffer, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -257,6 +310,26 @@ func (s *Store) ListByDriverSessionID(_ context.Context, sessionID string) ([]do
 	return bookings, nil
 }
 
+func (s *Store) ListActiveBookingsByActorID(_ context.Context, actorUserID string) ([]domain.RideBooking, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var bookings []domain.RideBooking
+	for _, booking := range s.rideBookings {
+		if booking.RiderID != actorUserID && booking.DriverID != actorUserID {
+			continue
+		}
+		if isTerminalBookingState(booking.State) {
+			continue
+		}
+		bookings = append(bookings, booking)
+	}
+	sort.Slice(bookings, func(i, j int) bool {
+		return bookings[i].UpdatedAt.After(bookings[j].UpdatedAt)
+	})
+	return bookings, nil
+}
+
 func (s *Store) SaveReview(_ context.Context, review domain.Review) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -291,4 +364,26 @@ func (s *Store) FindResult(_ context.Context, key string) (string, string, error
 		return "", "", errors.New("idempotency key not found")
 	}
 	return record.resourceID, record.payloadHash, nil
+}
+
+func driverSessionStatePriority(state domain.DriverSessionState) int {
+	switch state {
+	case domain.DriverSessionStateActive:
+		return 0
+	case domain.DriverSessionStateFull:
+		return 1
+	case domain.DriverSessionStatePaused:
+		return 2
+	default:
+		return 3
+	}
+}
+
+func isTerminalBookingState(state domain.RideBookingState) bool {
+	switch state {
+	case domain.RideBookingStateCompleted, domain.RideBookingStateCanceled, domain.RideBookingStateNoShow:
+		return true
+	default:
+		return false
+	}
 }

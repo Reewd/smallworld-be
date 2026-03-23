@@ -154,6 +154,10 @@ func (s *TripDemandService) GetForRider(ctx context.Context, riderID string, dem
 	return demand, nil
 }
 
+func (s *TripDemandService) GetCurrentForRider(ctx context.Context, riderID string) (domain.TripDemand, error) {
+	return s.demands.FindActiveByRiderID(ctx, riderID)
+}
+
 func (s *TripDemandService) runMatch(ctx context.Context, demand domain.TripDemand, rider domain.IdentityVerification) (*domain.RideOffer, error) {
 	sessions, err := s.listCandidateSessions(ctx)
 	if err != nil {

@@ -81,3 +81,14 @@ func (s *BookingService) GetForActor(ctx context.Context, actorUserID string, bo
 	}
 	return booking, nil
 }
+
+func (s *BookingService) ListActiveForActor(ctx context.Context, actorUserID string) ([]domain.RideBooking, error) {
+	bookings, err := s.bookings.ListActiveByActorID(ctx, actorUserID)
+	if err != nil {
+		return nil, err
+	}
+	if len(bookings) == 0 {
+		return nil, domain.ErrBookingNotFound
+	}
+	return bookings, nil
+}

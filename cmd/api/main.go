@@ -35,6 +35,8 @@ func main() {
 	port := getenv("PORT", "8080")
 	firebaseProjectID := os.Getenv("FIREBASE_PROJECT_ID")
 	firebaseCredentialsFile := os.Getenv("FIREBASE_CREDENTIALS_FILE")
+	firebaseAuthEmulatorHost := os.Getenv("FIREBASE_AUTH_EMULATOR_HOST")
+	emulatorMode := firebaseAuthEmulatorHost != ""
 	routingProvider, routingMode, err := newRoutingProvider()
 	if err != nil {
 		log.Fatal(err)
@@ -53,6 +55,7 @@ func main() {
 	defer redisClient.Close()
 
 	idg := &foundation.AtomicIDGenerator{}
+	realtimeHub := realtime.NewHub()
 
 	engine := matching.NewEngine(routingProvider, matching.Config{
 		MaxDriverSessionStalenessSeconds: 15,
@@ -82,16 +85,16 @@ func main() {
 		Routing:  routingProvider,
 		Pricing:  pricing.NewFixedFormula(),
 		Push:     push.NoopNotifier{},
-		Realtime: realtime.NoopHub{},
+		Realtime: realtimeHub,
 		IDGen:    idg,
 		Matching: engine,
 	}
 	services := application.NewServices(deps)
-	authVerifier, err := newAuthVerifier(ctx, firebaseProjectID, firebaseCredentialsFile)
+	authVerifier, err := newAuthVerifier(ctx, firebaseProjectID, firebaseCredentialsFile, firebaseAuthEmulatorHost)
 	if err != nil {
 		log.Fatal(err)
 	}
-	logAuthMode(firebaseProjectID, firebaseCredentialsFile, os.Getenv("ALLOW_DEV_AUTH") == "true")
+	logAuthMode(firebaseProjectID, firebaseCredentialsFile, firebaseAuthEmulatorHost)
 	log.Printf("routing mode: %s", routingMode)
 
 	sweeper := backgroundoffers.NewSweeper(
@@ -125,7 +128,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              ":" + port,
-		Handler:           httpapi.NewServer(services, authVerifier).Routes(),
+		Handler:           httpapi.NewServer(services, authVerifier, realtimeHub, emulatorMode).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -150,28 +153,19 @@ func main() {
 	}
 }
 
-func newAuthVerifier(ctx context.Context, projectID, credentialsFile string) (ports.AuthVerifier, error) {
-	var verifiers []ports.AuthVerifier
-
-	if projectID != "" || credentialsFile != "" {
-		firebaseVerifier, err := auth.NewFirebaseVerifier(ctx, auth.FirebaseConfig{
-			ProjectID:       projectID,
-			CredentialsFile: credentialsFile,
-		})
-		if err != nil {
-			return nil, err
-		}
-		verifiers = append(verifiers, firebaseVerifier)
+func newAuthVerifier(ctx context.Context, projectID, credentialsFile, authEmulatorHost string) (ports.AuthVerifier, error) {
+	switch {
+	case projectID == "":
+		return nil, errors.New("FIREBASE_PROJECT_ID is required")
+	case authEmulatorHost == "" && credentialsFile == "":
+		return nil, errors.New("FIREBASE_CREDENTIALS_FILE is required unless FIREBASE_AUTH_EMULATOR_HOST is set")
 	}
 
-	if len(verifiers) == 0 || os.Getenv("ALLOW_DEV_AUTH") == "true" {
-		verifiers = append(verifiers, auth.DevVerifier{})
-	}
-
-	if len(verifiers) == 1 {
-		return verifiers[0], nil
-	}
-	return auth.CompositeVerifier{Verifiers: verifiers}, nil
+	return auth.NewFirebaseVerifier(ctx, auth.FirebaseConfig{
+		ProjectID:        projectID,
+		CredentialsFile:  credentialsFile,
+		AuthEmulatorHost: authEmulatorHost,
+	})
 }
 
 func newRoutingProvider() (ports.RoutingProvider, string, error) {
@@ -189,16 +183,14 @@ func newRoutingProvider() (ports.RoutingProvider, string, error) {
 	return provider, "google routes api", nil
 }
 
-func logAuthMode(projectID, credentialsFile string, allowDevAuth bool) {
+func logAuthMode(projectID, credentialsFile, authEmulatorHost string) {
 	switch {
-	case (projectID != "" || credentialsFile != "") && allowDevAuth:
-		log.Printf("auth mode: firebase enabled with dev auth fallback")
-	case projectID != "" || credentialsFile != "":
-		log.Printf("auth mode: firebase only")
-	case allowDevAuth:
-		log.Printf("auth mode: dev auth only")
+	case authEmulatorHost != "":
+		log.Printf("auth mode: firebase auth emulator (%s) for project %s", authEmulatorHost, projectID)
+	case projectID != "" && credentialsFile != "":
+		log.Printf("auth mode: firebase production verification for project %s", projectID)
 	default:
-		log.Printf("auth mode: no explicit provider configured, dev auth fallback enabled")
+		log.Printf("auth mode: firebase configuration incomplete")
 	}
 }
 

@@ -221,6 +221,10 @@ func (s *DriverSessionService) GetOwned(ctx context.Context, actorUserID string,
 	return session, nil
 }
 
+func (s *DriverSessionService) GetCurrentForDriver(ctx context.Context, actorUserID string) (domain.DriverSession, error) {
+	return s.sessions.FindCurrentByDriverID(ctx, actorUserID)
+}
+
 func (s *DriverSessionService) ReconcileStaleSessions(ctx context.Context, maxStaleness time.Duration) ([]domain.DriverSession, error) {
 	if maxStaleness <= 0 {
 		return nil, nil

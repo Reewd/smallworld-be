@@ -351,6 +351,30 @@ func (r DriverSessions) ListActive(ctx context.Context) ([]domain.DriverSession,
 	return sessions, rows.Err()
 }
 
+func (r DriverSessions) FindCurrentByDriverID(ctx context.Context, driverID string) (domain.DriverSession, error) {
+	row := r.Pool.QueryRow(ctx, `
+		SELECT
+			id, driver_id, vehicle_id, state,
+			ST_Y(origin::geometry), ST_X(origin::geometry),
+			ST_Y(destination::geometry), ST_X(destination::geometry),
+			ST_Y(current_location::geometry), ST_X(current_location::geometry),
+			remaining_capacity, max_driver_pickup_detour_meters, route_distance_meters, route_duration_seconds, route_polyline,
+			last_heartbeat_at, created_at, updated_at
+		FROM driver_sessions
+		WHERE driver_id = $1 AND state IN ('active', 'full', 'paused')
+		ORDER BY
+			CASE state
+				WHEN 'active' THEN 0
+				WHEN 'full' THEN 1
+				WHEN 'paused' THEN 2
+				ELSE 3
+			END,
+			updated_at DESC
+		LIMIT 1
+	`, driverID)
+	return scanDriverSession(row)
+}
+
 func (r TripDemands) Save(ctx context.Context, demand domain.TripDemand) error {
 	var matchedPickupLat any
 	var matchedPickupLng any
@@ -542,6 +566,30 @@ func (r RideOffers) ListPending(ctx context.Context) ([]domain.RideOffer, error)
 	return offers, rows.Err()
 }
 
+func (r RideOffers) ListPendingByDriverID(ctx context.Context, driverID string) ([]domain.RideOffer, error) {
+	rows, err := r.Pool.Query(ctx, `
+		SELECT ro.id, ro.demand_id, ro.driver_session_id, ro.state, ro.detour_meters, ro.pickup_eta_seconds, ro.fare_cents, ro.created_at, ro.updated_at
+		FROM ride_offers ro
+		INNER JOIN driver_sessions ds ON ds.id = ro.driver_session_id
+		WHERE ds.driver_id = $1 AND ro.state = 'pending'
+		ORDER BY ro.created_at DESC
+	`, driverID)
+	if err != nil {
+		return nil, fmt.Errorf("list pending ride offers by driver id: %w", err)
+	}
+	defer rows.Close()
+
+	var offers []domain.RideOffer
+	for rows.Next() {
+		offer, err := scanRideOffer(rows)
+		if err != nil {
+			return nil, err
+		}
+		offers = append(offers, offer)
+	}
+	return offers, rows.Err()
+}
+
 func (r RideOffers) TransitionPending(ctx context.Context, offerID string, next domain.RideOfferState, updatedAt time.Time) (domain.RideOffer, error) {
 	return scanRideOffer(r.Pool.QueryRow(ctx, `
 		UPDATE ride_offers
@@ -692,6 +740,55 @@ func (r RideBookings) ListByDriverSessionID(ctx context.Context, sessionID strin
 	return bookings, rows.Err()
 }
 
+func (r RideBookings) ListActiveByActorID(ctx context.Context, actorUserID string) ([]domain.RideBooking, error) {
+	rows, err := r.Pool.Query(ctx, `
+		SELECT
+			id, demand_id, driver_session_id, rider_id, driver_id, state,
+			ST_Y(matched_pickup::geometry), ST_X(matched_pickup::geometry),
+			ST_Y(matched_dropoff::geometry), ST_X(matched_dropoff::geometry),
+			rider_walk_to_pickup_m, rider_walk_from_dropoff_m, driver_pickup_detour_m,
+			quoted_fare_cents, vehicle_license_plate, created_at, updated_at
+		FROM ride_bookings
+		WHERE (rider_id = $1 OR driver_id = $1)
+		  AND state NOT IN ('completed', 'canceled', 'no_show')
+		ORDER BY updated_at DESC
+	`, actorUserID)
+	if err != nil {
+		return nil, fmt.Errorf("list active ride bookings by actor id: %w", err)
+	}
+	defer rows.Close()
+
+	var bookings []domain.RideBooking
+	for rows.Next() {
+		var booking domain.RideBooking
+		var state string
+		if err := rows.Scan(
+			&booking.ID,
+			&booking.DemandID,
+			&booking.DriverSessionID,
+			&booking.RiderID,
+			&booking.DriverID,
+			&state,
+			&booking.MatchedPickup.Lat,
+			&booking.MatchedPickup.Lng,
+			&booking.MatchedDropoff.Lat,
+			&booking.MatchedDropoff.Lng,
+			&booking.RiderWalkToPickupM,
+			&booking.RiderWalkFromDropoffM,
+			&booking.DriverPickupDetourM,
+			&booking.QuotedFareCents,
+			&booking.VehicleLicensePlate,
+			&booking.CreatedAt,
+			&booking.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan active ride booking: %w", err)
+		}
+		booking.State = domain.RideBookingState(state)
+		bookings = append(bookings, booking)
+	}
+	return bookings, rows.Err()
+}
+
 func (r Reviews) Save(ctx context.Context, review domain.Review) error {
 	_, err := r.Pool.Exec(ctx, `
 		INSERT INTO reviews (id, booking_id, author_id, subject_id, rating, comment, created_at)
@@ -807,7 +904,7 @@ func scanDriverSession(row scannable) (domain.DriverSession, error) {
 		&session.UpdatedAt,
 	)
 	if isNotFound(err) {
-		return domain.DriverSession{}, fmt.Errorf("driver session not found")
+		return domain.DriverSession{}, domain.ErrDriverSessionNotFound
 	}
 	if err != nil {
 		return domain.DriverSession{}, fmt.Errorf("scan driver session: %w", err)

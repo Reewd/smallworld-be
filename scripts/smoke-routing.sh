@@ -3,8 +3,18 @@
 set -euo pipefail
 
 API_BASE_URL="${API_BASE_URL:-http://localhost:8080}"
-AUTH_TOKEN="${AUTH_TOKEN:-dev:driver_1}"
-VEHICLE_ID="${VEHICLE_ID:-veh_1}"
+
+if [[ -z "${AUTH_TOKEN:-}" ]]; then
+  echo "AUTH_TOKEN is required"
+  echo "Provide a Firebase ID token, ideally from the Firebase Auth emulator during local development."
+  exit 1
+fi
+
+if [[ -z "${VEHICLE_ID:-}" ]]; then
+  echo "VEHICLE_ID is required"
+  echo "Pass the backend vehicle ID that belongs to the authenticated user."
+  exit 1
+fi
 
 echo "== auth/me =="
 curl -sS \

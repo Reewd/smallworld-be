@@ -2,7 +2,10 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"strings"
 
 	firebase "firebase.google.com/go/v4"
 	fbauth "firebase.google.com/go/v4/auth"
@@ -11,9 +14,12 @@ import (
 	"smallworld/internal/ports"
 )
 
+var ErrInvalidToken = errors.New("invalid token")
+
 type FirebaseConfig struct {
-	ProjectID       string
-	CredentialsFile string
+	ProjectID        string
+	CredentialsFile  string
+	AuthEmulatorHost string
 }
 
 type FirebaseVerifier struct {
@@ -27,7 +33,12 @@ func NewFirebaseVerifier(ctx context.Context, cfg FirebaseConfig) (*FirebaseVeri
 	}
 
 	var opts []option.ClientOption
-	if cfg.CredentialsFile != "" {
+	if cfg.AuthEmulatorHost != "" {
+		if err := os.Setenv("FIREBASE_AUTH_EMULATOR_HOST", strings.TrimSpace(cfg.AuthEmulatorHost)); err != nil {
+			return nil, fmt.Errorf("set FIREBASE_AUTH_EMULATOR_HOST: %w", err)
+		}
+	}
+	if cfg.AuthEmulatorHost == "" && cfg.CredentialsFile != "" {
 		opts = append(opts, option.WithCredentialsFile(cfg.CredentialsFile))
 	}
 
@@ -53,18 +64,4 @@ func (v *FirebaseVerifier) VerifyToken(ctx context.Context, rawToken string) (po
 		Subject:  token.UID,
 		Provider: "firebase",
 	}, nil
-}
-
-type CompositeVerifier struct {
-	Verifiers []ports.AuthVerifier
-}
-
-func (v CompositeVerifier) VerifyToken(ctx context.Context, rawToken string) (ports.AuthIdentity, error) {
-	for _, verifier := range v.Verifiers {
-		identity, err := verifier.VerifyToken(ctx, rawToken)
-		if err == nil {
-			return identity, nil
-		}
-	}
-	return ports.AuthIdentity{}, ErrInvalidToken
 }

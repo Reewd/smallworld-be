@@ -13,18 +13,37 @@ import (
 )
 
 type Server struct {
-	services     application.Services
-	authVerifier ports.AuthVerifier
+	services           application.Services
+	authVerifier       ports.AuthVerifier
+	webSocketHub       webSocketHub
+	enableDevBootstrap bool
 }
 
-func NewServer(services application.Services, authVerifier ports.AuthVerifier) *Server {
-	return &Server{services: services, authVerifier: authVerifier}
+type webSocketHub interface {
+	ServeHTTP(http.ResponseWriter, *http.Request, string)
+}
+
+func NewServer(services application.Services, authVerifier ports.AuthVerifier, webSocketHub webSocketHub, enableDevBootstrap bool) *Server {
+	return &Server{
+		services:           services,
+		authVerifier:       authVerifier,
+		webSocketHub:       webSocketHub,
+		enableDevBootstrap: enableDevBootstrap,
+	}
 }
 
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
+	mux.HandleFunc("GET /v1/ws", s.handleWebSocket)
 	mux.HandleFunc("GET /v1/auth/me", s.handleAuthMe)
+	if s.enableDevBootstrap {
+		mux.HandleFunc("POST /v1/dev/me/bootstrap", s.handleDevBootstrap)
+	}
+	mux.HandleFunc("GET /v1/me/driver-session", s.handleCurrentDriverSession)
+	mux.HandleFunc("GET /v1/me/trip-demand", s.handleCurrentTripDemand)
+	mux.HandleFunc("GET /v1/me/ride-offers", s.handleCurrentRideOffers)
+	mux.HandleFunc("GET /v1/me/bookings", s.handleCurrentBookings)
 	mux.HandleFunc("GET /v1/profile/me", s.handleProfileMe)
 	mux.HandleFunc("POST /v1/profile", s.handleProfileUpsert)
 	mux.HandleFunc("GET /v1/vehicles", s.handleVehicleList)
@@ -44,6 +63,105 @@ func (s *Server) Routes() http.Handler {
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	userID, err := currentUserID(r)
+	if err != nil {
+		writeServiceError(w, err, http.StatusBadRequest)
+		return
+	}
+	if s.webSocketHub == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "realtime unavailable"})
+		return
+	}
+	s.webSocketHub.ServeHTTP(w, r, userID)
+}
+
+func (s *Server) handleDevBootstrap(w http.ResponseWriter, r *http.Request) {
+	identity, err := currentIdentity(r)
+	if err != nil {
+		writeServiceError(w, err, http.StatusUnauthorized)
+		return
+	}
+
+	var body struct {
+		DisplayName    string                            `json:"display_name"`
+		VerifiedGender domain.Gender                     `json:"verified_gender"`
+		Vehicle        *service.DevBootstrapVehicleInput `json:"vehicle"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	result, err := s.services.DevBootstrap.Bootstrap(r.Context(), service.DevBootstrapInput{
+		AuthSubject:    identity.Subject,
+		DisplayName:    body.DisplayName,
+		VerifiedGender: body.VerifiedGender,
+		Vehicle:        body.Vehicle,
+	})
+	if err != nil {
+		writeServiceError(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleCurrentDriverSession(w http.ResponseWriter, r *http.Request) {
+	userID, err := currentUserID(r)
+	if err != nil {
+		writeServiceError(w, err, http.StatusBadRequest)
+		return
+	}
+	session, err := s.services.DriverSession.GetCurrentForDriver(r.Context(), userID)
+	if err != nil {
+		writeServiceError(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, session)
+}
+
+func (s *Server) handleCurrentTripDemand(w http.ResponseWriter, r *http.Request) {
+	userID, err := currentUserID(r)
+	if err != nil {
+		writeServiceError(w, err, http.StatusBadRequest)
+		return
+	}
+	demand, err := s.services.TripDemand.GetCurrentForRider(r.Context(), userID)
+	if err != nil {
+		writeServiceError(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, demand)
+}
+
+func (s *Server) handleCurrentRideOffers(w http.ResponseWriter, r *http.Request) {
+	userID, err := currentUserID(r)
+	if err != nil {
+		writeServiceError(w, err, http.StatusBadRequest)
+		return
+	}
+	offers, err := s.services.Offer.ListPendingForDriver(r.Context(), userID)
+	if err != nil {
+		writeServiceError(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, offers)
+}
+
+func (s *Server) handleCurrentBookings(w http.ResponseWriter, r *http.Request) {
+	userID, err := currentUserID(r)
+	if err != nil {
+		writeServiceError(w, err, http.StatusBadRequest)
+		return
+	}
+	bookings, err := s.services.Booking.ListActiveForActor(r.Context(), userID)
+	if err != nil {
+		writeServiceError(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, bookings)
 }
 
 func (s *Server) handleProfileUpsert(w http.ResponseWriter, r *http.Request) {
@@ -508,4 +626,23 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 
 func writeError(w http.ResponseWriter, status int, err error) {
 	writeJSON(w, status, map[string]string{"error": err.Error()})
+}
+
+func writeServiceError(w http.ResponseWriter, err error, defaultStatus int) {
+	writeError(w, statusForError(err, defaultStatus), err)
+}
+
+func statusForError(err error, defaultStatus int) int {
+	switch {
+	case errors.Is(err, domain.ErrUnauthorized):
+		return http.StatusUnauthorized
+	case errors.Is(err, domain.ErrUserNotFound),
+		errors.Is(err, domain.ErrDriverSessionNotFound),
+		errors.Is(err, domain.ErrDemandNotFound),
+		errors.Is(err, domain.ErrOfferNotFound),
+		errors.Is(err, domain.ErrBookingNotFound):
+		return http.StatusNotFound
+	default:
+		return defaultStatus
+	}
 }

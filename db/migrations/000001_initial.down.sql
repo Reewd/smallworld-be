@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS audit_events;
+DROP TABLE IF EXISTS reviews;
+DROP TABLE IF EXISTS ride_bookings;
+DROP TABLE IF EXISTS ride_offers;
+DROP TABLE IF EXISTS trip_demands;
+DROP TABLE IF EXISTS driver_sessions;
+DROP TABLE IF EXISTS vehicles;
+DROP TABLE IF EXISTS identity_verifications;
+DROP TABLE IF EXISTS users;

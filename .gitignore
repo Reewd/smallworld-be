@@ -1,3 +1,4 @@
 firebase.json
 .env.local
+.secrets/
 *.md

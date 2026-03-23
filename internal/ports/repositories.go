@@ -28,6 +28,7 @@ type DriverSessionRepository interface {
 	Save(context.Context, domain.DriverSession) error
 	FindByID(context.Context, string) (domain.DriverSession, error)
 	ListActive(context.Context) ([]domain.DriverSession, error)
+	FindCurrentByDriverID(context.Context, string) (domain.DriverSession, error)
 }
 
 type TripDemandRepository interface {
@@ -41,6 +42,7 @@ type RideOfferRepository interface {
 	FindByID(context.Context, string) (domain.RideOffer, error)
 	FindPendingByDemandID(context.Context, string) (domain.RideOffer, error)
 	ListPending(context.Context) ([]domain.RideOffer, error)
+	ListPendingByDriverID(context.Context, string) ([]domain.RideOffer, error)
 	TransitionPending(context.Context, string, domain.RideOfferState, time.Time) (domain.RideOffer, error)
 }
 
@@ -48,6 +50,7 @@ type RideBookingRepository interface {
 	Save(context.Context, domain.RideBooking) error
 	FindByID(context.Context, string) (domain.RideBooking, error)
 	ListByDriverSessionID(context.Context, string) ([]domain.RideBooking, error)
+	ListActiveByActorID(context.Context, string) ([]domain.RideBooking, error)
 }
 
 type ReviewRepository interface {

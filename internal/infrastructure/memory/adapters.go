@@ -48,6 +48,9 @@ func (r DriverSessions) FindByID(ctx context.Context, id string) (domain.DriverS
 func (r DriverSessions) ListActive(ctx context.Context) ([]domain.DriverSession, error) {
 	return r.Store.ListActive(ctx)
 }
+func (r DriverSessions) FindCurrentByDriverID(ctx context.Context, driverID string) (domain.DriverSession, error) {
+	return r.Store.FindCurrentDriverSessionByDriverID(ctx, driverID)
+}
 func (r TripDemands) Save(ctx context.Context, demand domain.TripDemand) error {
 	return r.Store.SaveTripDemand(ctx, demand)
 }
@@ -69,6 +72,9 @@ func (r RideOffers) FindPendingByDemandID(ctx context.Context, demandID string) 
 func (r RideOffers) ListPending(ctx context.Context) ([]domain.RideOffer, error) {
 	return r.Store.ListPendingRideOffers(ctx)
 }
+func (r RideOffers) ListPendingByDriverID(ctx context.Context, driverID string) ([]domain.RideOffer, error) {
+	return r.Store.ListPendingRideOffersByDriverID(ctx, driverID)
+}
 func (r RideOffers) TransitionPending(ctx context.Context, offerID string, next domain.RideOfferState, updatedAt time.Time) (domain.RideOffer, error) {
 	return r.Store.TransitionPendingRideOffer(ctx, offerID, next, updatedAt)
 }
@@ -80,6 +86,9 @@ func (r RideBookings) FindByID(ctx context.Context, id string) (domain.RideBooki
 }
 func (r RideBookings) ListByDriverSessionID(ctx context.Context, sessionID string) ([]domain.RideBooking, error) {
 	return r.Store.ListByDriverSessionID(ctx, sessionID)
+}
+func (r RideBookings) ListActiveByActorID(ctx context.Context, actorUserID string) ([]domain.RideBooking, error) {
+	return r.Store.ListActiveBookingsByActorID(ctx, actorUserID)
 }
 func (r Reviews) Save(ctx context.Context, review domain.Review) error {
 	return r.Store.SaveReview(ctx, review)

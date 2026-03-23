@@ -183,6 +183,17 @@ func (s *OfferService) Decline(ctx context.Context, actorUserID string, offerID 
 	return offer, nil
 }
 
+func (s *OfferService) ListPendingForDriver(ctx context.Context, actorUserID string) ([]domain.RideOffer, error) {
+	offers, err := s.offers.ListPendingByDriverID(ctx, actorUserID)
+	if err != nil {
+		return nil, err
+	}
+	if len(offers) == 0 {
+		return nil, domain.ErrOfferNotFound
+	}
+	return offers, nil
+}
+
 func derefLocation(location *domain.Location, fallback domain.Location) domain.Location {
 	if location == nil {
 		return fallback
