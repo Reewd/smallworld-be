@@ -167,7 +167,7 @@ func (s *Server) handleCurrentBookings(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleProfileUpsert(w http.ResponseWriter, r *http.Request) {
 	identity, err := currentIdentity(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, err)
+		writeServiceError(w, err, http.StatusUnauthorized)
 		return
 	}
 
@@ -178,7 +178,7 @@ func (s *Server) handleProfileUpsert(w http.ResponseWriter, r *http.Request) {
 	}
 	user, err := s.services.Profile.UpsertAuthenticated(r.Context(), identity.Subject, input)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		writeServiceError(w, err, http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, http.StatusOK, user)
@@ -187,12 +187,12 @@ func (s *Server) handleProfileUpsert(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleProfileMe(w http.ResponseWriter, r *http.Request) {
 	identity, err := currentIdentity(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, err)
+		writeServiceError(w, err, http.StatusUnauthorized)
 		return
 	}
 	user, err := s.services.Profile.FindByAuthSubject(r.Context(), identity.Subject)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, http.StatusOK, user)
@@ -201,11 +201,7 @@ func (s *Server) handleProfileMe(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleVehicleCreate(w http.ResponseWriter, r *http.Request) {
 	userID, err := currentUserID(r)
 	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, domain.ErrUnauthorized) {
-			status = http.StatusUnauthorized
-		}
-		writeError(w, status, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	var input service.CreateVehicleInput
@@ -216,7 +212,7 @@ func (s *Server) handleVehicleCreate(w http.ResponseWriter, r *http.Request) {
 	input.UserID = userID
 	vehicle, err := s.services.Vehicle.Create(r.Context(), input)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, http.StatusCreated, vehicle)
@@ -225,16 +221,12 @@ func (s *Server) handleVehicleCreate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleVehicleList(w http.ResponseWriter, r *http.Request) {
 	userID, err := currentUserID(r)
 	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, domain.ErrUnauthorized) {
-			status = http.StatusUnauthorized
-		}
-		writeError(w, status, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	vehicles, err := s.services.Vehicle.ListByUserID(r.Context(), userID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, http.StatusOK, vehicles)
@@ -243,11 +235,7 @@ func (s *Server) handleVehicleList(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDriverSessionCreate(w http.ResponseWriter, r *http.Request) {
 	userID, err := currentUserID(r)
 	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, domain.ErrUnauthorized) {
-			status = http.StatusUnauthorized
-		}
-		writeError(w, status, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	var input service.StartDriverSessionInput
@@ -258,7 +246,7 @@ func (s *Server) handleDriverSessionCreate(w http.ResponseWriter, r *http.Reques
 	input.UserID = userID
 	session, err := s.services.DriverSession.Start(r.Context(), input)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, http.StatusCreated, session)
@@ -267,11 +255,7 @@ func (s *Server) handleDriverSessionCreate(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleDriverSessionRead(w http.ResponseWriter, r *http.Request) {
 	userID, err := currentUserID(r)
 	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, domain.ErrUnauthorized) {
-			status = http.StatusUnauthorized
-		}
-		writeError(w, status, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	sessionID := strings.TrimPrefix(r.URL.Path, "/v1/driver-sessions/")
@@ -281,11 +265,7 @@ func (s *Server) handleDriverSessionRead(w http.ResponseWriter, r *http.Request)
 	}
 	session, err := s.services.DriverSession.GetOwned(r.Context(), userID, sessionID)
 	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, domain.ErrUnauthorized) {
-			status = http.StatusUnauthorized
-		}
-		writeError(w, status, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, http.StatusOK, session)
@@ -294,11 +274,7 @@ func (s *Server) handleDriverSessionRead(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleDriverSessionActions(w http.ResponseWriter, r *http.Request) {
 	userID, err := currentUserID(r)
 	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, domain.ErrUnauthorized) {
-			status = http.StatusUnauthorized
-		}
-		writeError(w, status, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/v1/driver-sessions/")
@@ -317,7 +293,7 @@ func (s *Server) handleDriverSessionActions(w http.ResponseWriter, r *http.Reque
 			CurrentLocation: body.CurrentLocation,
 		})
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err)
+			writeServiceError(w, err, http.StatusBadRequest)
 			return
 		}
 		writeJSON(w, http.StatusOK, session)
@@ -335,7 +311,7 @@ func (s *Server) handleDriverSessionActions(w http.ResponseWriter, r *http.Reque
 			State:     body.State,
 		})
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err)
+			writeServiceError(w, err, http.StatusBadRequest)
 			return
 		}
 		writeJSON(w, http.StatusOK, session)
@@ -347,11 +323,7 @@ func (s *Server) handleDriverSessionActions(w http.ResponseWriter, r *http.Reque
 func (s *Server) handleTripDemandCreate(w http.ResponseWriter, r *http.Request) {
 	userID, err := currentUserID(r)
 	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, domain.ErrUnauthorized) {
-			status = http.StatusUnauthorized
-		}
-		writeError(w, status, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	var input service.CreateTripDemandInput
@@ -362,7 +334,7 @@ func (s *Server) handleTripDemandCreate(w http.ResponseWriter, r *http.Request) 
 	input.RiderID = userID
 	demand, offer, err := s.services.TripDemand.Create(r.Context(), input)
 	if err != nil && err != domain.ErrNoCandidateFound {
-		writeError(w, http.StatusBadRequest, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{
@@ -374,11 +346,7 @@ func (s *Server) handleTripDemandCreate(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleTripDemandRead(w http.ResponseWriter, r *http.Request) {
 	userID, err := currentUserID(r)
 	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, domain.ErrUnauthorized) {
-			status = http.StatusUnauthorized
-		}
-		writeError(w, status, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	demandID := strings.TrimPrefix(r.URL.Path, "/v1/trip-demands/")
@@ -388,11 +356,7 @@ func (s *Server) handleTripDemandRead(w http.ResponseWriter, r *http.Request) {
 	}
 	demand, err := s.services.TripDemand.GetForRider(r.Context(), userID, demandID)
 	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, domain.ErrUnauthorized) {
-			status = http.StatusUnauthorized
-		}
-		writeError(w, status, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, http.StatusOK, demand)
@@ -406,20 +370,12 @@ func (s *Server) handleTripDemandActions(w http.ResponseWriter, r *http.Request)
 	demandID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/trip-demands/"), "/cancel")
 	identity, err := currentUserID(r)
 	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, domain.ErrUnauthorized) {
-			status = http.StatusUnauthorized
-		}
-		writeError(w, status, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	demand, err := s.services.TripDemand.Cancel(r.Context(), identity, demandID)
 	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, domain.ErrUnauthorized) {
-			status = http.StatusUnauthorized
-		}
-		writeError(w, status, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, http.StatusOK, demand)
@@ -431,34 +387,26 @@ func (s *Server) handleOfferActions(w http.ResponseWriter, r *http.Request) {
 	case strings.HasSuffix(path, "/accept"):
 		userID, err := currentUserID(r)
 		if err != nil {
-			status := http.StatusBadRequest
-			if errors.Is(err, domain.ErrUnauthorized) {
-				status = http.StatusUnauthorized
-			}
-			writeError(w, status, err)
+			writeServiceError(w, err, http.StatusBadRequest)
 			return
 		}
 		offerID := strings.TrimSuffix(path, "/accept")
 		booking, err := s.services.Offer.Accept(r.Context(), userID, offerID)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err)
+			writeServiceError(w, err, http.StatusBadRequest)
 			return
 		}
 		writeJSON(w, http.StatusOK, booking)
 	case strings.HasSuffix(path, "/decline"):
 		userID, err := currentUserID(r)
 		if err != nil {
-			status := http.StatusBadRequest
-			if errors.Is(err, domain.ErrUnauthorized) {
-				status = http.StatusUnauthorized
-			}
-			writeError(w, status, err)
+			writeServiceError(w, err, http.StatusBadRequest)
 			return
 		}
 		offerID := strings.TrimSuffix(path, "/decline")
 		offer, err := s.services.Offer.Decline(r.Context(), userID, offerID)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err)
+			writeServiceError(w, err, http.StatusBadRequest)
 			return
 		}
 		writeJSON(w, http.StatusOK, offer)
@@ -470,11 +418,7 @@ func (s *Server) handleOfferActions(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleBookingRead(w http.ResponseWriter, r *http.Request) {
 	userID, err := currentUserID(r)
 	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, domain.ErrUnauthorized) {
-			status = http.StatusUnauthorized
-		}
-		writeError(w, status, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/v1/bookings/")
@@ -484,11 +428,7 @@ func (s *Server) handleBookingRead(w http.ResponseWriter, r *http.Request) {
 	}
 	booking, err := s.services.Booking.GetForActor(r.Context(), userID, path)
 	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, domain.ErrUnauthorized) {
-			status = http.StatusUnauthorized
-		}
-		writeError(w, status, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, http.StatusOK, booking)
@@ -509,11 +449,7 @@ func (s *Server) handleBookingActions(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleBookingTransition(w http.ResponseWriter, r *http.Request) {
 	userID, err := currentUserID(r)
 	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, domain.ErrUnauthorized) {
-			status = http.StatusUnauthorized
-		}
-		writeError(w, status, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/v1/bookings/")
@@ -531,11 +467,7 @@ func (s *Server) handleBookingTransition(w http.ResponseWriter, r *http.Request)
 	}
 	booking, err := s.services.Booking.TransitionForActor(r.Context(), userID, bookingID, body.State)
 	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, domain.ErrUnauthorized) {
-			status = http.StatusUnauthorized
-		}
-		writeError(w, status, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, http.StatusOK, booking)
@@ -548,11 +480,7 @@ func (s *Server) handleReviewCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	userID, err := currentUserID(r)
 	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, domain.ErrUnauthorized) {
-			status = http.StatusUnauthorized
-		}
-		writeError(w, status, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	bookingID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/bookings/"), "/reviews")
@@ -566,11 +494,7 @@ func (s *Server) handleReviewCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	review, err := s.services.Review.CreateForActor(r.Context(), bookingID, userID, body.Rating, body.Comment)
 	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, domain.ErrUnauthorized) {
-			status = http.StatusUnauthorized
-		}
-		writeError(w, status, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, http.StatusCreated, review)
@@ -588,7 +512,7 @@ func (s *Server) handleUserReviewList(w http.ResponseWriter, r *http.Request) {
 	}
 	reviews, err := s.services.Review.ListBySubjectID(r.Context(), userID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeServiceError(w, err, http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, http.StatusOK, reviews)
@@ -597,7 +521,7 @@ func (s *Server) handleUserReviewList(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 	identity, err := currentIdentity(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, err)
+		writeServiceError(w, err, http.StatusUnauthorized)
 		return
 	}
 
@@ -610,7 +534,7 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 	if identity.UserID != "" {
 		user, err := s.services.Profile.FindByAuthSubject(r.Context(), identity.Subject)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
+			writeServiceError(w, err, http.StatusInternalServerError)
 			return
 		}
 		response.User = &user
@@ -629,20 +553,61 @@ func writeError(w http.ResponseWriter, status int, err error) {
 }
 
 func writeServiceError(w http.ResponseWriter, err error, defaultStatus int) {
-	writeError(w, statusForError(err, defaultStatus), err)
+	resolved := resolveServiceError(err, defaultStatus)
+	writeJSON(w, resolved.status, map[string]string{"error": resolved.message})
 }
 
-func statusForError(err error, defaultStatus int) int {
+type resolvedServiceError struct {
+	status  int
+	message string
+}
+
+func resolveServiceError(err error, defaultStatus int) resolvedServiceError {
 	switch {
 	case errors.Is(err, domain.ErrUnauthorized):
-		return http.StatusUnauthorized
+		return resolvedServiceError{status: http.StatusUnauthorized, message: "unauthorized"}
 	case errors.Is(err, domain.ErrUserNotFound),
 		errors.Is(err, domain.ErrDriverSessionNotFound),
 		errors.Is(err, domain.ErrDemandNotFound),
 		errors.Is(err, domain.ErrOfferNotFound),
 		errors.Is(err, domain.ErrBookingNotFound):
-		return http.StatusNotFound
+		return resolvedServiceError{
+			status:  http.StatusNotFound,
+			message: messageForKnownServiceError(err),
+		}
+	case errors.Is(err, domain.ErrVerificationRequired):
+		return resolvedServiceError{status: defaultStatus, message: "verification required"}
+	case errors.Is(err, domain.ErrVehicleRequired):
+		return resolvedServiceError{status: defaultStatus, message: "active vehicle required"}
+	case errors.Is(err, domain.ErrNoCandidateFound):
+		return resolvedServiceError{status: defaultStatus, message: "no matching driver candidate found"}
+	case errors.Is(err, domain.ErrCapacityExceeded):
+		return resolvedServiceError{status: defaultStatus, message: "capacity exceeded"}
+	case errors.Is(err, domain.ErrIdempotencyConflict):
+		return resolvedServiceError{status: defaultStatus, message: "idempotency conflict"}
+	case errors.Is(err, domain.ErrWomenOnlyRequiresVerifiedFemaleRider):
+		return resolvedServiceError{status: defaultStatus, message: "women-only matching is unavailable for this account"}
 	default:
-		return defaultStatus
+		if defaultStatus >= http.StatusInternalServerError {
+			return resolvedServiceError{status: defaultStatus, message: "internal server error"}
+		}
+		return resolvedServiceError{status: defaultStatus, message: err.Error()}
+	}
+}
+
+func messageForKnownServiceError(err error) string {
+	switch {
+	case errors.Is(err, domain.ErrUserNotFound):
+		return "user not found"
+	case errors.Is(err, domain.ErrDriverSessionNotFound):
+		return "driver session not found"
+	case errors.Is(err, domain.ErrDemandNotFound):
+		return "trip demand not found"
+	case errors.Is(err, domain.ErrOfferNotFound):
+		return "ride offer not found"
+	case errors.Is(err, domain.ErrBookingNotFound):
+		return "ride booking not found"
+	default:
+		return err.Error()
 	}
 }

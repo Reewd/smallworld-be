@@ -44,7 +44,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		if user, err := s.services.Profile.FindByAuthSubject(r.Context(), authIdentity.Subject); err == nil {
 			identity.UserID = user.ID
 		} else if !errors.Is(err, domain.ErrUserNotFound) {
-			writeError(w, http.StatusInternalServerError, err)
+			writeServiceError(w, err, http.StatusInternalServerError)
 			return
 		}
 
