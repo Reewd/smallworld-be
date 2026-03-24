@@ -94,6 +94,9 @@ func (s *TripDemandService) Create(ctx context.Context, input CreateTripDemandIn
 	if !domain.RiderEligible(verification) {
 		return domain.TripDemand{}, nil, domain.ErrVerificationRequired
 	}
+	if input.WomenDriversOnly && verification.VerifiedGender != domain.GenderFemale {
+		return domain.TripDemand{}, nil, domain.ErrWomenOnlyRequiresVerifiedFemaleRider
+	}
 
 	now := time.Now().UTC()
 	demand := domain.TripDemand{
