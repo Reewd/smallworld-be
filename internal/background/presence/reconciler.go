@@ -2,7 +2,8 @@ package presence
 
 import (
 	"context"
-	"log"
+	"io"
+	"log/slog"
 	"time"
 
 	"smallworld/internal/application/service"
@@ -18,15 +19,15 @@ type Reconciler struct {
 	driverSessions *service.DriverSessionService
 	realtime       ports.RealtimeHub
 	config         Config
-	logger         *log.Logger
+	logger         *slog.Logger
 }
 
-func NewReconciler(driverSessions *service.DriverSessionService, realtime ports.RealtimeHub, config Config, logger *log.Logger) *Reconciler {
+func NewReconciler(driverSessions *service.DriverSessionService, realtime ports.RealtimeHub, config Config, logger *slog.Logger) *Reconciler {
 	if config.PollInterval <= 0 {
 		config.PollInterval = 5 * time.Second
 	}
 	if logger == nil {
-		logger = log.Default()
+		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	return &Reconciler{
 		driverSessions: driverSessions,
@@ -42,7 +43,7 @@ func (r *Reconciler) Run(ctx context.Context) {
 
 	for {
 		if err := r.ReconcileOnce(ctx); err != nil {
-			r.logger.Printf("driver presence reconciler error: %v", err)
+			r.logger.ErrorContext(ctx, "driver presence reconciliation failed", "error", err)
 		}
 
 		select {
@@ -62,6 +63,9 @@ func (r *Reconciler) ReconcileOnce(ctx context.Context) error {
 		if r.realtime != nil {
 			_ = r.realtime.PublishToUser(ctx, session.DriverID, "driver_session.paused", session)
 		}
+	}
+	if len(paused) > 0 {
+		r.logger.DebugContext(ctx, "paused stale driver sessions", "count", len(paused))
 	}
 	return nil
 }

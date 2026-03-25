@@ -3,6 +3,8 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -17,18 +19,23 @@ type Server struct {
 	authVerifier       ports.AuthVerifier
 	webSocketHub       webSocketHub
 	enableDevBootstrap bool
+	logger             *slog.Logger
 }
 
 type webSocketHub interface {
 	ServeHTTP(http.ResponseWriter, *http.Request, string)
 }
 
-func NewServer(services application.Services, authVerifier ports.AuthVerifier, webSocketHub webSocketHub, enableDevBootstrap bool) *Server {
+func NewServer(services application.Services, authVerifier ports.AuthVerifier, webSocketHub webSocketHub, enableDevBootstrap bool, logger *slog.Logger) *Server {
+	if logger == nil {
+		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
 	return &Server{
 		services:           services,
 		authVerifier:       authVerifier,
 		webSocketHub:       webSocketHub,
 		enableDevBootstrap: enableDevBootstrap,
+		logger:             logger,
 	}
 }
 
@@ -58,7 +65,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/bookings/", s.handleBookingRead)
 	mux.HandleFunc("POST /v1/bookings/", s.handleBookingActions)
 	mux.HandleFunc("GET /v1/users/", s.handleUserReviewList)
-	return s.authMiddleware(mux)
+	return s.authMiddleware(s.loggingMiddleware(mux))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -72,7 +79,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.webSocketHub == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "realtime unavailable"})
+		writeErrorMessage(w, http.StatusServiceUnavailable, "realtime unavailable")
 		return
 	}
 	s.webSocketHub.ServeHTTP(w, r, userID)
@@ -549,12 +556,19 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
+	recordResponseError(w, err.Error(), err)
 	writeJSON(w, status, map[string]string{"error": err.Error()})
 }
 
 func writeServiceError(w http.ResponseWriter, err error, defaultStatus int) {
 	resolved := resolveServiceError(err, defaultStatus)
+	recordResponseError(w, resolved.message, err)
 	writeJSON(w, resolved.status, map[string]string{"error": resolved.message})
+}
+
+func writeErrorMessage(w http.ResponseWriter, status int, message string) {
+	recordResponseError(w, message, nil)
+	writeJSON(w, status, map[string]string{"error": message})
 }
 
 type resolvedServiceError struct {

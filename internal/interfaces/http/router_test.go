@@ -1,9 +1,12 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,7 +23,7 @@ import (
 )
 
 func TestDevBootstrapRouteDisabledOutsideEmulatorMode(t *testing.T) {
-	server := NewServer(newTestServices(t), staticAuthVerifier{}, &fakeWebSocketHub{}, false)
+	server := NewServer(newTestServices(t), staticAuthVerifier{}, &fakeWebSocketHub{}, false, discardLogger())
 	req := httptest.NewRequest(http.MethodPost, "/v1/dev/me/bootstrap", nil)
 	req.Header.Set("Authorization", "Bearer test-token")
 	rec := httptest.NewRecorder()
@@ -33,7 +36,7 @@ func TestDevBootstrapRouteDisabledOutsideEmulatorMode(t *testing.T) {
 }
 
 func TestWebSocketRouteRequiresExistingBackendUser(t *testing.T) {
-	server := NewServer(newTestServices(t), staticAuthVerifier{}, &fakeWebSocketHub{}, true)
+	server := NewServer(newTestServices(t), staticAuthVerifier{}, &fakeWebSocketHub{}, true, discardLogger())
 	req := httptest.NewRequest(http.MethodGet, "/v1/ws", nil)
 	req.Header.Set("Authorization", "Bearer test-token")
 	rec := httptest.NewRecorder()
@@ -59,7 +62,7 @@ func TestWebSocketRoutePassesResolvedUserIDToHub(t *testing.T) {
 	}
 
 	hub := fakeWebSocketHub{}
-	server := NewServer(services, staticAuthVerifier{}, &hub, true)
+	server := NewServer(services, staticAuthVerifier{}, &hub, true, discardLogger())
 	req := httptest.NewRequest(http.MethodGet, "/v1/ws", nil)
 	req.Header.Set("Authorization", "Bearer test-token")
 	rec := httptest.NewRecorder()
@@ -117,7 +120,7 @@ func TestTripDemandCreateReturnsStreamlinedServiceError(t *testing.T) {
 		t.Fatalf("save verification: %v", err)
 	}
 
-	server := NewServer(services, staticAuthVerifier{}, &fakeWebSocketHub{}, true)
+	server := NewServer(services, staticAuthVerifier{}, &fakeWebSocketHub{}, true, discardLogger())
 	req := httptest.NewRequest(http.MethodPost, "/v1/trip-demands", strings.NewReader(`{
 		"requested_origin":{"lat":45.0,"lng":9.0},
 		"requested_destination":{"lat":45.01,"lng":9.01},
@@ -154,10 +157,113 @@ func TestResolveServiceErrorHidesUnknownInternalMessage(t *testing.T) {
 	}
 }
 
+func TestRequestLoggingIncludesDebugStartAndResolvedUserID(t *testing.T) {
+	services := newTestServices(t)
+	user, err := services.Profile.UpsertAuthenticated(context.Background(), "auth-subject", service.UpsertProfileInput{
+		DisplayName: "Andrea",
+		Preferences: domain.UserPreferences{
+			MaxWalkToPickupMeters:       300,
+			MaxWalkFromDropoffMeters:    300,
+			MaxDriverPickupDetourMeters: 1000,
+		},
+	})
+	if err != nil {
+		t.Fatalf("upsert profile: %v", err)
+	}
+
+	logger, buf := bufferLogger(slog.LevelDebug)
+	server := NewServer(services, staticAuthVerifier{}, &fakeWebSocketHub{}, true, logger)
+	req := httptest.NewRequest(http.MethodGet, "/v1/profile/me", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	output := buf.String()
+	if !strings.Contains(output, `"msg":"http request started"`) {
+		t.Fatalf("expected debug start log, got %s", output)
+	}
+	if !strings.Contains(output, `"msg":"http request completed"`) {
+		t.Fatalf("expected completion log, got %s", output)
+	}
+	if !strings.Contains(output, `"user_id":"`+user.ID+`"`) {
+		t.Fatalf("expected user_id in completion log, got %s", output)
+	}
+}
+
+func TestAuthFailureLoggingDoesNotLeakBearerToken(t *testing.T) {
+	logger, buf := bufferLogger(slog.LevelDebug)
+	server := NewServer(newTestServices(t), rejectingAuthVerifier{}, &fakeWebSocketHub{}, true, logger)
+	req := httptest.NewRequest(http.MethodGet, "/v1/profile/me", nil)
+	req.Header.Set("Authorization", "Bearer super-secret-token")
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	output := buf.String()
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(output, "invalid bearer token") {
+		t.Fatalf("expected auth failure log, got %s", output)
+	}
+	if strings.Contains(output, "super-secret-token") {
+		t.Fatalf("expected bearer token to stay out of logs, got %s", output)
+	}
+}
+
+func TestRequestLoggingDoesNotLeakRequestBody(t *testing.T) {
+	logger, buf := bufferLogger(slog.LevelDebug)
+	server := NewServer(newTestServices(t), staticAuthVerifier{}, &fakeWebSocketHub{}, true, logger)
+	req := httptest.NewRequest(http.MethodPost, "/v1/profile", strings.NewReader(`{"display_name":"super-secret-body"`))
+	req.Header.Set("Authorization", "Bearer test-token")
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	output := buf.String()
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(output, "super-secret-body") {
+		t.Fatalf("expected request body to stay out of logs, got %s", output)
+	}
+}
+
+func TestInternalServerErrorsLogAtErrorLevel(t *testing.T) {
+	logger, buf := bufferLogger(slog.LevelDebug)
+	services := application.Services{
+		Profile: service.NewProfileService(failingUsers{}, &foundation.AtomicIDGenerator{}),
+	}
+	server := NewServer(services, staticAuthVerifier{}, &fakeWebSocketHub{}, true, logger)
+	req := httptest.NewRequest(http.MethodGet, "/v1/profile/me", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	output := buf.String()
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(output, `"level":"ERROR"`) {
+		t.Fatalf("expected error-level logs, got %s", output)
+	}
+	if !strings.Contains(output, `"error":"internal server error"`) {
+		t.Fatalf("expected generic client-facing 500 message in request log, got %s", output)
+	}
+}
+
 type staticAuthVerifier struct{}
 
 func (staticAuthVerifier) VerifyToken(context.Context, string) (ports.AuthIdentity, error) {
 	return ports.AuthIdentity{Subject: "auth-subject", Provider: "firebase"}, nil
+}
+
+type rejectingAuthVerifier struct{}
+
+func (rejectingAuthVerifier) VerifyToken(context.Context, string) (ports.AuthIdentity, error) {
+	return ports.AuthIdentity{}, errors.New("invalid token")
 }
 
 type fakeWebSocketHub struct {
@@ -204,4 +310,23 @@ func structToProfileInput(user domain.User) service.UpsertProfileInput {
 		DisplayName: user.DisplayName,
 		Preferences: user.Preferences,
 	}
+}
+
+func discardLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+func bufferLogger(level slog.Level) (*slog.Logger, *bytes.Buffer) {
+	var buf bytes.Buffer
+	return slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: level})), &buf
+}
+
+type failingUsers struct{}
+
+func (failingUsers) Save(context.Context, domain.User) error { return errors.New("save exploded") }
+func (failingUsers) FindByID(context.Context, string) (domain.User, error) {
+	return domain.User{}, errors.New("find by id exploded")
+}
+func (failingUsers) FindByAuthSubject(context.Context, string) (domain.User, error) {
+	return domain.User{}, errors.New("database exploded")
 }

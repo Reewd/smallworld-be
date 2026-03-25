@@ -3,7 +3,8 @@ package offers
 import (
 	"context"
 	"errors"
-	"log"
+	"io"
+	"log/slog"
 	"time"
 
 	"smallworld/internal/domain"
@@ -23,7 +24,7 @@ type Sweeper struct {
 	realtime  ports.RealtimeHub
 	ephemeral ports.EphemeralOfferStore
 	config    Config
-	logger    *log.Logger
+	logger    *slog.Logger
 }
 
 func NewSweeper(
@@ -33,7 +34,7 @@ func NewSweeper(
 	realtime ports.RealtimeHub,
 	ephemeral ports.EphemeralOfferStore,
 	config Config,
-	logger *log.Logger,
+	logger *slog.Logger,
 ) *Sweeper {
 	if config.PollInterval <= 0 {
 		config.PollInterval = 5 * time.Second
@@ -42,7 +43,7 @@ func NewSweeper(
 		config.PendingOfferTTL = 2 * time.Minute
 	}
 	if logger == nil {
-		logger = log.Default()
+		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	return &Sweeper{
 		offers:    offers,
@@ -61,7 +62,7 @@ func (s *Sweeper) Run(ctx context.Context) {
 
 	for {
 		if err := s.SweepOnce(ctx); err != nil {
-			s.logger.Printf("offer sweeper error: %v", err)
+			s.logger.ErrorContext(ctx, "offer sweep failed", "error", err)
 		}
 
 		select {
@@ -97,6 +98,11 @@ func (s *Sweeper) SweepOnce(ctx context.Context) error {
 		if s.realtime != nil && session.DriverID != "" {
 			_ = s.realtime.PublishToUser(ctx, session.DriverID, "ride_offer."+string(updatedOffer.State), updatedOffer)
 		}
+		s.logger.DebugContext(ctx, "pending offer transitioned",
+			"offer_id", updatedOffer.ID,
+			"state", updatedOffer.State,
+			"driver_session_id", updatedOffer.DriverSessionID,
+		)
 
 		if demand.ID != "" && demand.State == domain.TripDemandStateOffered {
 			demand.State = domain.TripDemandStateSearching

@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,6 +14,7 @@ import (
 	backgroundoffers "smallworld/internal/background/offers"
 	backgroundpresence "smallworld/internal/background/presence"
 	"smallworld/internal/foundation"
+	applog "smallworld/internal/foundation/logging"
 	"smallworld/internal/infrastructure/auth"
 	"smallworld/internal/infrastructure/postgres"
 	"smallworld/internal/infrastructure/pricing"
@@ -30,6 +31,13 @@ func main() {
 	ctx, cancelWorkers := context.WithCancel(context.Background())
 	defer cancelWorkers()
 
+	logConfig, err := applog.LoadConfigFromEnv("smallworld-api")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "logging configuration error: %v\n", err)
+		os.Exit(1)
+	}
+	logger := applog.NewLogger(logConfig, nil)
+
 	databaseURL := getenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/smallworld?sslmode=disable")
 	redisURL := getenv("REDIS_URL", "redis://localhost:6379/0")
 	port := getenv("PORT", "8080")
@@ -39,18 +47,25 @@ func main() {
 	emulatorMode := firebaseAuthEmulatorHost != ""
 	routingProvider, routingMode, err := newRoutingProvider()
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("routing provider configuration failed", "error", err)
+		os.Exit(1)
 	}
 
-	pool, err := postgres.Open(ctx, databaseURL)
+	pool, err := postgres.Open(ctx, databaseURL, postgres.OpenOptions{
+		Logger:             logger.With("component", "postgres"),
+		SlowQueryThreshold: logConfig.DBSlowQueryThreshold,
+		LogAllQueries:      logConfig.DBLogAllQueriesEnabled,
+	})
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("postgres initialization failed", "error", err)
+		os.Exit(1)
 	}
 	defer pool.Close()
 
 	redisClient, err := redisstate.Open(ctx, redisURL)
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("redis initialization failed", "error", err)
+		os.Exit(1)
 	}
 	defer redisClient.Close()
 
@@ -92,10 +107,11 @@ func main() {
 	services := application.NewServices(deps)
 	authVerifier, err := newAuthVerifier(ctx, firebaseProjectID, firebaseCredentialsFile, firebaseAuthEmulatorHost)
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("auth verifier initialization failed", "error", err)
+		os.Exit(1)
 	}
-	logAuthMode(firebaseProjectID, firebaseCredentialsFile, firebaseAuthEmulatorHost)
-	log.Printf("routing mode: %s", routingMode)
+	logAuthMode(logger, firebaseProjectID, firebaseCredentialsFile, firebaseAuthEmulatorHost)
+	logger.Info("routing configured", "mode", routingMode)
 
 	sweeper := backgroundoffers.NewSweeper(
 		deps.Offers,
@@ -108,7 +124,7 @@ func main() {
 			PendingOfferTTL:           2 * time.Minute,
 			MaxDriverSessionStaleness: 30 * time.Second,
 		},
-		log.Default(),
+		logger.With("component", "offer_sweeper"),
 	)
 	presenceReconciler := backgroundpresence.NewReconciler(
 		services.DriverSession,
@@ -117,25 +133,28 @@ func main() {
 			PollInterval:              5 * time.Second,
 			MaxDriverSessionStaleness: 30 * time.Second,
 		},
-		log.Default(),
+		logger.With("component", "presence_reconciler"),
 	)
 
 	if os.Getenv("SEED_DEMO_DATA") == "true" {
 		if err := postgres.SeedDemoData(ctx, postgres.Users{Pool: pool}, postgres.Verifications{Pool: pool}, postgres.Vehicles{Pool: pool}); err != nil {
-			log.Fatal(err)
+			logger.Error("demo seed failed", "error", err)
+			os.Exit(1)
 		}
+		logger.Info("demo data seeded")
 	}
 
 	server := &http.Server{
 		Addr:              ":" + port,
-		Handler:           httpapi.NewServer(services, authVerifier, realtimeHub, emulatorMode).Routes(),
+		Handler:           httpapi.NewServer(services, authVerifier, realtimeHub, emulatorMode, logger.With("component", "http")).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	go func() {
-		log.Printf("smallworld api listening on %s", server.Addr)
+		logger.Info("http server listening", "addr", server.Addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal(err)
+			logger.Error("http server exited unexpectedly", "error", err)
+			os.Exit(1)
 		}
 	}()
 	go sweeper.Run(ctx)
@@ -149,8 +168,10 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Printf("shutdown error: %v", err)
+		logger.Error("http server shutdown failed", "error", err)
+		return
 	}
+	logger.Info("http server shutdown complete")
 }
 
 func newAuthVerifier(ctx context.Context, projectID, credentialsFile, authEmulatorHost string) (ports.AuthVerifier, error) {
@@ -183,14 +204,16 @@ func newRoutingProvider() (ports.RoutingProvider, string, error) {
 	return provider, "google routes api", nil
 }
 
-func logAuthMode(projectID, credentialsFile, authEmulatorHost string) {
+func logAuthMode(logger interface {
+	Info(string, ...any)
+}, projectID, credentialsFile, authEmulatorHost string) {
 	switch {
 	case authEmulatorHost != "":
-		log.Printf("auth mode: firebase auth emulator (%s) for project %s", authEmulatorHost, projectID)
+		logger.Info("auth configured", "mode", "firebase_emulator", "project_id", projectID, "emulator_host", authEmulatorHost)
 	case projectID != "" && credentialsFile != "":
-		log.Printf("auth mode: firebase production verification for project %s", projectID)
+		logger.Info("auth configured", "mode", "firebase_production", "project_id", projectID)
 	default:
-		log.Printf("auth mode: firebase configuration incomplete")
+		logger.Info("auth configured", "mode", "incomplete")
 	}
 }
 
