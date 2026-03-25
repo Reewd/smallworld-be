@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -12,7 +13,13 @@ import (
 
 const defaultConnectTimeout = 5 * time.Second
 
-func Open(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+type OpenOptions struct {
+	Logger             *slog.Logger
+	SlowQueryThreshold time.Duration
+	LogAllQueries      bool
+}
+
+func Open(ctx context.Context, databaseURL string, options OpenOptions) (*pgxpool.Pool, error) {
 	if databaseURL == "" {
 		return nil, errors.New("database url is required")
 	}
@@ -30,6 +37,9 @@ func Open(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	}
 	if config.HealthCheckPeriod == 0 {
 		config.HealthCheckPeriod = 30 * time.Second
+	}
+	if options.Logger != nil {
+		config.ConnConfig.Tracer = newQueryTracer(options.Logger, options.SlowQueryThreshold, options.LogAllQueries)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, defaultConnectTimeout)
