@@ -12,6 +12,7 @@ var (
 	ErrNoCandidateFound                     = errors.New("no matching driver candidate found")
 	ErrOfferNotFound                        = errors.New("ride offer not found")
 	ErrBookingNotFound                      = errors.New("ride booking not found")
+	ErrInvalidUserPreferences               = errors.New("invalid user preferences")
 	ErrCapacityExceeded                     = errors.New("capacity exceeded")
 	ErrIdempotencyConflict                  = errors.New("idempotency conflict")
 	ErrWomenOnlyRequiresVerifiedFemaleRider = errors.New("women-only matching is unavailable for this account")

@@ -26,24 +26,24 @@ func (r Users) Save(ctx context.Context, user domain.User) error {
 	_, err := r.Pool.Exec(ctx, `
 		INSERT INTO users (
 			id, auth_subject, display_name, average_rating,
-			max_walk_to_pickup_meters, max_walk_from_dropoff_meters, max_driver_pickup_detour_meters, created_at
+			walk_to_pickup_preference, walk_from_dropoff_preference, driver_pickup_detour_preference, created_at
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (id) DO UPDATE SET
 			auth_subject = EXCLUDED.auth_subject,
 			display_name = EXCLUDED.display_name,
 			average_rating = EXCLUDED.average_rating,
-			max_walk_to_pickup_meters = EXCLUDED.max_walk_to_pickup_meters,
-			max_walk_from_dropoff_meters = EXCLUDED.max_walk_from_dropoff_meters,
-			max_driver_pickup_detour_meters = EXCLUDED.max_driver_pickup_detour_meters
+			walk_to_pickup_preference = EXCLUDED.walk_to_pickup_preference,
+			walk_from_dropoff_preference = EXCLUDED.walk_from_dropoff_preference,
+			driver_pickup_detour_preference = EXCLUDED.driver_pickup_detour_preference
 	`,
 		user.ID,
 		user.AuthSubject,
 		user.DisplayName,
 		user.AverageRating,
-		user.Preferences.MaxWalkToPickupMeters,
-		user.Preferences.MaxWalkFromDropoffMeters,
-		user.Preferences.MaxDriverPickupDetourMeters,
+		string(user.Preferences.WalkToPickup),
+		string(user.Preferences.WalkFromDropoff),
+		string(user.Preferences.DriverPickupDetour),
 		user.CreatedAt,
 	)
 	if err != nil {
@@ -56,7 +56,7 @@ func (r Users) FindByID(ctx context.Context, id string) (domain.User, error) {
 	var user domain.User
 	err := r.Pool.QueryRow(ctx, `
 		SELECT id, auth_subject, display_name, average_rating,
-		       max_walk_to_pickup_meters, max_walk_from_dropoff_meters, max_driver_pickup_detour_meters, created_at
+		       walk_to_pickup_preference, walk_from_dropoff_preference, driver_pickup_detour_preference, created_at
 		FROM users
 		WHERE id = $1
 	`, id).Scan(
@@ -64,9 +64,9 @@ func (r Users) FindByID(ctx context.Context, id string) (domain.User, error) {
 		&user.AuthSubject,
 		&user.DisplayName,
 		&user.AverageRating,
-		&user.Preferences.MaxWalkToPickupMeters,
-		&user.Preferences.MaxWalkFromDropoffMeters,
-		&user.Preferences.MaxDriverPickupDetourMeters,
+		&user.Preferences.WalkToPickup,
+		&user.Preferences.WalkFromDropoff,
+		&user.Preferences.DriverPickupDetour,
 		&user.CreatedAt,
 	)
 	if isNotFound(err) {
@@ -82,7 +82,7 @@ func (r Users) FindByAuthSubject(ctx context.Context, authSubject string) (domai
 	var user domain.User
 	err := r.Pool.QueryRow(ctx, `
 		SELECT id, auth_subject, display_name, average_rating,
-		       max_walk_to_pickup_meters, max_walk_from_dropoff_meters, max_driver_pickup_detour_meters, created_at
+		       walk_to_pickup_preference, walk_from_dropoff_preference, driver_pickup_detour_preference, created_at
 		FROM users
 		WHERE auth_subject = $1
 	`, authSubject).Scan(
@@ -90,9 +90,9 @@ func (r Users) FindByAuthSubject(ctx context.Context, authSubject string) (domai
 		&user.AuthSubject,
 		&user.DisplayName,
 		&user.AverageRating,
-		&user.Preferences.MaxWalkToPickupMeters,
-		&user.Preferences.MaxWalkFromDropoffMeters,
-		&user.Preferences.MaxDriverPickupDetourMeters,
+		&user.Preferences.WalkToPickup,
+		&user.Preferences.WalkFromDropoff,
+		&user.Preferences.DriverPickupDetour,
 		&user.CreatedAt,
 	)
 	if isNotFound(err) {

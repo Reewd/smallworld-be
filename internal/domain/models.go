@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"encoding/json"
+	"errors"
+	"time"
+)
 
 type Gender string
 
@@ -24,10 +28,92 @@ type Location struct {
 	Lng float64 `json:"lng"`
 }
 
+type PreferenceLevel string
+
+const (
+	PreferenceLevelLow    PreferenceLevel = "low"
+	PreferenceLevelMedium PreferenceLevel = "medium"
+	PreferenceLevelBig    PreferenceLevel = "big"
+)
+
 type UserPreferences struct {
-	MaxWalkToPickupMeters       int `json:"max_walk_to_pickup_meters"`
-	MaxWalkFromDropoffMeters    int `json:"max_walk_from_dropoff_meters"`
-	MaxDriverPickupDetourMeters int `json:"max_driver_pickup_detour_meters"`
+	WalkToPickup       PreferenceLevel `json:"walk_to_pickup"`
+	WalkFromDropoff    PreferenceLevel `json:"walk_from_dropoff"`
+	DriverPickupDetour PreferenceLevel `json:"driver_pickup_detour"`
+}
+
+func (l PreferenceLevel) IsValid() bool {
+	switch l {
+	case PreferenceLevelLow, PreferenceLevelMedium, PreferenceLevelBig:
+		return true
+	default:
+		return false
+	}
+}
+
+func (p UserPreferences) Validate() bool {
+	return p.WalkToPickup.IsValid() &&
+		p.WalkFromDropoff.IsValid() &&
+		p.DriverPickupDetour.IsValid()
+}
+
+func (p UserPreferences) MaxWalkToPickupMeters() int {
+	switch p.WalkToPickup {
+	case PreferenceLevelLow:
+		return 200
+	case PreferenceLevelBig:
+		return 400
+	default:
+		return 300
+	}
+}
+
+func (p UserPreferences) MaxWalkFromDropoffMeters() int {
+	switch p.WalkFromDropoff {
+	case PreferenceLevelLow:
+		return 200
+	case PreferenceLevelBig:
+		return 400
+	default:
+		return 300
+	}
+}
+
+func (p UserPreferences) MaxDriverPickupDetourMeters() int {
+	switch p.DriverPickupDetour {
+	case PreferenceLevelLow:
+		return 700
+	case PreferenceLevelBig:
+		return 1300
+	default:
+		return 1000
+	}
+}
+
+func (p *UserPreferences) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		WalkToPickup       *PreferenceLevel `json:"walk_to_pickup"`
+		WalkFromDropoff    *PreferenceLevel `json:"walk_from_dropoff"`
+		DriverPickupDetour *PreferenceLevel `json:"driver_pickup_detour"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw.WalkToPickup == nil || raw.WalkFromDropoff == nil || raw.DriverPickupDetour == nil {
+		return errors.New("all preference fields are required")
+	}
+
+	value := UserPreferences{
+		WalkToPickup:       *raw.WalkToPickup,
+		WalkFromDropoff:    *raw.WalkFromDropoff,
+		DriverPickupDetour: *raw.DriverPickupDetour,
+	}
+	if !value.Validate() {
+		return ErrInvalidUserPreferences
+	}
+
+	*p = value
+	return nil
 }
 
 type User struct {

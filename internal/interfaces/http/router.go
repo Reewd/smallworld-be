@@ -614,6 +614,8 @@ func resolveServiceError(err error, defaultStatus int) resolvedServiceError {
 		return resolvedServiceError{status: defaultStatus, message: "active vehicle required"}
 	case errors.Is(err, domain.ErrNoCandidateFound):
 		return resolvedServiceError{status: defaultStatus, message: "no matching driver candidate found"}
+	case errors.Is(err, domain.ErrInvalidUserPreferences):
+		return resolvedServiceError{status: http.StatusBadRequest, message: "invalid user preferences"}
 	case errors.Is(err, domain.ErrCapacityExceeded):
 		return resolvedServiceError{status: defaultStatus, message: "capacity exceeded"}
 	case errors.Is(err, domain.ErrIdempotencyConflict):

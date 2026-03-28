@@ -58,8 +58,12 @@ func TestDevBootstrapReusesExistingVehicleByLicensePlate(t *testing.T) {
 		ID:          "user_1",
 		AuthSubject: "emulator-user",
 		DisplayName: "Existing",
-		Preferences: domain.UserPreferences{MaxWalkToPickupMeters: 300, MaxWalkFromDropoffMeters: 300, MaxDriverPickupDetourMeters: 1000},
-		CreatedAt:   now,
+		Preferences: domain.UserPreferences{
+			WalkToPickup:       domain.PreferenceLevelMedium,
+			WalkFromDropoff:    domain.PreferenceLevelMedium,
+			DriverPickupDetour: domain.PreferenceLevelMedium,
+		},
+		CreatedAt: now,
 	}); err != nil {
 		t.Fatalf("save user: %v", err)
 	}

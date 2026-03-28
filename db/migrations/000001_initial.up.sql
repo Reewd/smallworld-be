@@ -5,9 +5,9 @@ CREATE TABLE users (
     auth_subject TEXT NOT NULL UNIQUE,
     display_name TEXT NOT NULL,
     average_rating NUMERIC(3,2) NOT NULL DEFAULT 0,
-    max_walk_to_pickup_meters INTEGER NOT NULL DEFAULT 300,
-    max_walk_from_dropoff_meters INTEGER NOT NULL DEFAULT 300,
-    max_driver_pickup_detour_meters INTEGER NOT NULL DEFAULT 1000,
+    walk_to_pickup_preference TEXT NOT NULL DEFAULT 'medium' CHECK (walk_to_pickup_preference IN ('low', 'medium', 'big')),
+    walk_from_dropoff_preference TEXT NOT NULL DEFAULT 'medium' CHECK (walk_from_dropoff_preference IN ('low', 'medium', 'big')),
+    driver_pickup_detour_preference TEXT NOT NULL DEFAULT 'medium' CHECK (driver_pickup_detour_preference IN ('low', 'medium', 'big')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

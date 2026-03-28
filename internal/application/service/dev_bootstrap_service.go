@@ -138,9 +138,9 @@ func (s *DevBootstrapService) Bootstrap(ctx context.Context, input DevBootstrapI
 
 func defaultUserPreferences() domain.UserPreferences {
 	return domain.UserPreferences{
-		MaxWalkToPickupMeters:       300,
-		MaxWalkFromDropoffMeters:    300,
-		MaxDriverPickupDetourMeters: 1000,
+		WalkToPickup:       domain.PreferenceLevelMedium,
+		WalkFromDropoff:    domain.PreferenceLevelMedium,
+		DriverPickupDetour: domain.PreferenceLevelMedium,
 	}
 }
 

@@ -101,12 +101,14 @@ Example body:
 {
   "display_name": "Andrea",
   "preferences": {
-    "max_walk_to_pickup_meters": 400,
-    "max_walk_from_dropoff_meters": 400,
-    "max_driver_pickup_detour_meters": 1200
+    "walk_to_pickup": "medium",
+    "walk_from_dropoff": "medium",
+    "driver_pickup_detour": "medium"
   }
 }
 ```
+
+The backend stores those three values as preference tiers and maps them to concrete distance thresholds internally.
 
 ## Recommended Environment Strategy
 

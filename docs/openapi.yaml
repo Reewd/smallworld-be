@@ -1,0 +1,1058 @@
+openapi: 3.0.3
+info:
+  title: Smallworld MVP Backend API
+  version: 0.1.0
+  description: |
+    Initial OpenAPI description for the current Smallworld backend.
+
+    This spec is intentionally grounded in the routes and JSON shapes implemented
+    in the Go server today. It documents the current contract for the Android
+    prototype and backend iteration, including current-state convenience
+    endpoints and the emulator-only development bootstrap route.
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+tags:
+  - name: Health
+  - name: Auth
+  - name: Profile
+  - name: Vehicles
+  - name: Driver Sessions
+  - name: Trip Demands
+  - name: Ride Offers
+  - name: Bookings
+  - name: Reviews
+  - name: Realtime
+security:
+  - BearerAuth: []
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Health check
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+  /v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: Resolve the authenticated caller
+      description: |
+        Verifies the bearer token and returns the external auth identity. If the
+        bearer token already maps to a backend user, the response also includes
+        that user record, any stored verification status, and a derived
+        onboarding state for client routing.
+      responses:
+        '200':
+          description: Authenticated caller resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthBootstrapResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/ws:
+    get:
+      tags: [Realtime]
+      summary: Open the authenticated realtime WebSocket
+      description: |
+        Upgrades the request to a WebSocket connection for server-to-client
+        realtime events. This endpoint requires an authenticated backend user.
+      responses:
+        '101':
+          description: Switching Protocols
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '503':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/dev/me/bootstrap:
+    post:
+      tags: [Auth]
+      summary: Development bootstrap for an authenticated emulator user
+      description: |
+        Emulator-only development helper. Creates or updates the backend user,
+        marks identity verification as verified with `provider = dev_emulator`,
+        and optionally creates an active vehicle.
+
+        This route is only mounted when the backend is started in emulator mode.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DevBootstrapRequest'
+      responses:
+        '200':
+          description: User bootstrapped successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DevBootstrapResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          description: Route not available outside emulator mode
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/profile/me:
+    get:
+      tags: [Profile]
+      summary: Get the current backend user profile
+      responses:
+        '200':
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/profile:
+    post:
+      tags: [Profile]
+      summary: Create or update the authenticated backend profile
+      description: |
+        Upserts the backend user mapped to the current bearer token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpsertRequest'
+      responses:
+        '200':
+          description: Profile upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/me/driver-session:
+    get:
+      tags: [Driver Sessions]
+      summary: Get the current driver session for the authenticated user
+      responses:
+        '200':
+          description: Current driver session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverSession'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/me/trip-demand:
+    get:
+      tags: [Trip Demands]
+      summary: Get the current trip demand for the authenticated user
+      responses:
+        '200':
+          description: Current trip demand
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripDemand'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/me/ride-offers:
+    get:
+      tags: [Ride Offers]
+      summary: List pending ride offers for the authenticated driver
+      responses:
+        '200':
+          description: Pending ride offers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RideOffer'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/me/bookings:
+    get:
+      tags: [Bookings]
+      summary: List active bookings for the authenticated actor
+      responses:
+        '200':
+          description: Active bookings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RideBooking'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/vehicles:
+    get:
+      tags: [Vehicles]
+      summary: List the authenticated user's vehicles
+      responses:
+        '200':
+          description: Vehicles owned by the caller
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Vehicle'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+    post:
+      tags: [Vehicles]
+      summary: Create a vehicle for the authenticated user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVehicleRequest'
+      responses:
+        '201':
+          description: Vehicle created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vehicle'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/driver-sessions:
+    post:
+      tags: [Driver Sessions]
+      summary: Start a driver session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartDriverSessionRequest'
+      responses:
+        '201':
+          description: Driver session started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverSession'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/driver-sessions/{id}:
+    get:
+      tags: [Driver Sessions]
+      summary: Get an owned driver session by id
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+      responses:
+        '200':
+          description: Driver session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverSession'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/driver-sessions/{id}/heartbeat:
+    post:
+      tags: [Driver Sessions]
+      summary: Send a driver session heartbeat
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DriverSessionHeartbeatRequest'
+      responses:
+        '200':
+          description: Driver session updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverSession'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/driver-sessions/{id}/state:
+    post:
+      tags: [Driver Sessions]
+      summary: Transition a driver session state
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DriverSessionStateTransitionRequest'
+      responses:
+        '200':
+          description: Driver session transitioned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverSession'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/trip-demands:
+    post:
+      tags: [Trip Demands]
+      summary: Create a trip demand and trigger matching
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTripDemandRequest'
+      responses:
+        '201':
+          description: Trip demand created, with an offer if one was produced immediately
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateTripDemandResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/trip-demands/{id}:
+    get:
+      tags: [Trip Demands]
+      summary: Get a trip demand owned by the authenticated rider
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+      responses:
+        '200':
+          description: Trip demand
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripDemand'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/trip-demands/{id}/cancel:
+    post:
+      tags: [Trip Demands]
+      summary: Cancel a trip demand
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+      responses:
+        '200':
+          description: Trip demand canceled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripDemand'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/ride-offers/{id}/accept:
+    post:
+      tags: [Ride Offers]
+      summary: Accept a pending ride offer
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+      responses:
+        '200':
+          description: Offer accepted and booking assigned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RideBooking'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/ride-offers/{id}/decline:
+    post:
+      tags: [Ride Offers]
+      summary: Decline a pending ride offer
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+      responses:
+        '200':
+          description: Offer declined
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RideOffer'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/bookings/{id}:
+    get:
+      tags: [Bookings]
+      summary: Get a booking visible to the authenticated actor
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+      responses:
+        '200':
+          description: Booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RideBooking'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/bookings/{id}/state:
+    post:
+      tags: [Bookings]
+      summary: Transition a booking state
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RideBookingStateTransitionRequest'
+      responses:
+        '200':
+          description: Booking transitioned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RideBooking'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/bookings/{id}/reviews:
+    post:
+      tags: [Reviews]
+      summary: Create a review for the booking counterparty
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReviewRequest'
+      responses:
+        '201':
+          description: Review created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Review'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /v1/users/{id}/reviews:
+    get:
+      tags: [Reviews]
+      summary: List reviews for a user
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+      responses:
+        '200':
+          description: Reviews for the requested user
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Review'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Firebase ID token
+  parameters:
+    IdPathParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    ErrorResponse:
+      description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          example: user not found
+    AuthIdentity:
+      type: object
+      required: [subject, provider]
+      properties:
+        subject:
+          type: string
+        provider:
+          type: string
+        user_id:
+          type: string
+    AuthBootstrapResponse:
+      type: object
+      required: [auth, user, verification, onboarding_state]
+      properties:
+        auth:
+          $ref: '#/components/schemas/AuthIdentity'
+        user:
+          allOf:
+            - $ref: '#/components/schemas/User'
+          nullable: true
+        verification:
+          allOf:
+            - $ref: '#/components/schemas/IdentityVerification'
+          nullable: true
+        onboarding_state:
+          $ref: '#/components/schemas/OnboardingState'
+    OnboardingState:
+      type: string
+      enum: [needs_profile, needs_verification, verification_pending, ready]
+    Location:
+      type: object
+      required: [lat, lng]
+      properties:
+        lat:
+          type: number
+          format: double
+        lng:
+          type: number
+          format: double
+    UserPreferences:
+      type: object
+      required:
+        - walk_to_pickup
+        - walk_from_dropoff
+        - driver_pickup_detour
+      properties:
+        walk_to_pickup:
+          $ref: '#/components/schemas/PreferenceLevel'
+        walk_from_dropoff:
+          $ref: '#/components/schemas/PreferenceLevel'
+        driver_pickup_detour:
+          $ref: '#/components/schemas/PreferenceLevel'
+    PreferenceLevel:
+      type: string
+      description: Backend-mapped preference tier used to derive concrete meter thresholds.
+      enum: [low, medium, big]
+    User:
+      type: object
+      required:
+        - id
+        - auth_subject
+        - display_name
+        - average_rating
+        - preferences
+        - created_at
+      properties:
+        id:
+          type: string
+        auth_subject:
+          type: string
+        display_name:
+          type: string
+        average_rating:
+          type: number
+          format: double
+        preferences:
+          $ref: '#/components/schemas/UserPreferences'
+        created_at:
+          type: string
+          format: date-time
+    VerificationStatus:
+      type: string
+      enum: [pending, verified, rejected]
+    Gender:
+      type: string
+      enum: [unknown, female, male, other]
+    IdentityVerification:
+      type: object
+      required:
+        - user_id
+        - status
+        - provider
+        - provider_ref
+        - verified_gender
+        - updated_at
+      properties:
+        user_id:
+          type: string
+        status:
+          $ref: '#/components/schemas/VerificationStatus'
+        provider:
+          type: string
+        provider_ref:
+          type: string
+        verified_gender:
+          $ref: '#/components/schemas/Gender'
+        verified_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+    Vehicle:
+      type: object
+      required:
+        - id
+        - user_id
+        - make
+        - model
+        - color
+        - license_plate
+        - capacity
+        - is_active
+        - created_at
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        make:
+          type: string
+        model:
+          type: string
+        color:
+          type: string
+        license_plate:
+          type: string
+        capacity:
+          type: integer
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    DriverSessionState:
+      type: string
+      enum: [active, full, paused, ended]
+    DriverSession:
+      type: object
+      required:
+        - id
+        - driver_id
+        - vehicle_id
+        - state
+        - origin
+        - destination
+        - current_location
+        - remaining_capacity
+        - max_driver_pickup_detour_meters
+        - route_distance_meters
+        - route_duration_seconds
+        - last_heartbeat_at
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+        driver_id:
+          type: string
+        vehicle_id:
+          type: string
+        state:
+          $ref: '#/components/schemas/DriverSessionState'
+        origin:
+          $ref: '#/components/schemas/Location'
+        destination:
+          $ref: '#/components/schemas/Location'
+        current_location:
+          $ref: '#/components/schemas/Location'
+        remaining_capacity:
+          type: integer
+        max_driver_pickup_detour_meters:
+          type: integer
+        route_distance_meters:
+          type: integer
+        route_duration_seconds:
+          type: integer
+        route_polyline:
+          type: string
+        last_heartbeat_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TripDemandState:
+      type: string
+      enum: [draft, searching, offered, matched, canceled, aborted]
+    TripDemand:
+      type: object
+      required:
+        - id
+        - rider_id
+        - state
+        - requested_origin
+        - requested_destination
+        - women_drivers_only
+        - max_walk_to_pickup_meters
+        - max_walk_from_dropoff_meters
+        - idempotency_key
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+        rider_id:
+          type: string
+        state:
+          $ref: '#/components/schemas/TripDemandState'
+        requested_origin:
+          $ref: '#/components/schemas/Location'
+        requested_destination:
+          $ref: '#/components/schemas/Location'
+        matched_pickup:
+          allOf:
+            - $ref: '#/components/schemas/Location'
+          nullable: true
+        matched_dropoff:
+          allOf:
+            - $ref: '#/components/schemas/Location'
+          nullable: true
+        women_drivers_only:
+          type: boolean
+        max_walk_to_pickup_meters:
+          type: integer
+        max_walk_from_dropoff_meters:
+          type: integer
+        idempotency_key:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    RideOfferState:
+      type: string
+      enum: [pending, accepted, declined, expired, withdrawn]
+    RideOffer:
+      type: object
+      required:
+        - id
+        - demand_id
+        - driver_session_id
+        - state
+        - detour_meters
+        - pickup_eta_seconds
+        - fare_cents
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+        demand_id:
+          type: string
+        driver_session_id:
+          type: string
+        state:
+          $ref: '#/components/schemas/RideOfferState'
+        detour_meters:
+          type: integer
+        pickup_eta_seconds:
+          type: integer
+        fare_cents:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    RideBookingState:
+      type: string
+      enum:
+        - assigned
+        - rider_walking_to_pickup
+        - driver_en_route_to_pickup
+        - pickup_ready
+        - onboard
+        - completed
+        - canceled
+        - no_show
+    RideBooking:
+      type: object
+      required:
+        - id
+        - demand_id
+        - driver_session_id
+        - rider_id
+        - driver_id
+        - state
+        - matched_pickup
+        - matched_dropoff
+        - rider_walk_to_pickup_m
+        - rider_walk_from_dropoff_m
+        - driver_pickup_detour_m
+        - quoted_fare_cents
+        - vehicle_license_plate
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+        demand_id:
+          type: string
+        driver_session_id:
+          type: string
+        rider_id:
+          type: string
+        driver_id:
+          type: string
+        state:
+          $ref: '#/components/schemas/RideBookingState'
+        matched_pickup:
+          $ref: '#/components/schemas/Location'
+        matched_dropoff:
+          $ref: '#/components/schemas/Location'
+        rider_walk_to_pickup_m:
+          type: integer
+        rider_walk_from_dropoff_m:
+          type: integer
+        driver_pickup_detour_m:
+          type: integer
+        quoted_fare_cents:
+          type: integer
+        vehicle_license_plate:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Review:
+      type: object
+      required:
+        - id
+        - booking_id
+        - author_id
+        - subject_id
+        - rating
+        - comment
+        - created_at
+      properties:
+        id:
+          type: string
+        booking_id:
+          type: string
+        author_id:
+          type: string
+        subject_id:
+          type: string
+        rating:
+          type: integer
+        comment:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    ProfileUpsertRequest:
+      type: object
+      required: [display_name, preferences]
+      properties:
+        display_name:
+          type: string
+        preferences:
+          $ref: '#/components/schemas/UserPreferences'
+    DevBootstrapVehicleInput:
+      type: object
+      required: [make, model, color, license_plate, capacity]
+      properties:
+        make:
+          type: string
+        model:
+          type: string
+        color:
+          type: string
+        license_plate:
+          type: string
+        capacity:
+          type: integer
+    DevBootstrapRequest:
+      type: object
+      properties:
+        display_name:
+          type: string
+        verified_gender:
+          $ref: '#/components/schemas/Gender'
+        vehicle:
+          allOf:
+            - $ref: '#/components/schemas/DevBootstrapVehicleInput'
+          nullable: true
+    DevBootstrapResponse:
+      type: object
+      required: [user, verification]
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        verification:
+          $ref: '#/components/schemas/IdentityVerification'
+        vehicle:
+          allOf:
+            - $ref: '#/components/schemas/Vehicle'
+          nullable: true
+    CreateVehicleRequest:
+      type: object
+      required: [make, model, color, license_plate, capacity]
+      properties:
+        make:
+          type: string
+        model:
+          type: string
+        color:
+          type: string
+        license_plate:
+          type: string
+        capacity:
+          type: integer
+    StartDriverSessionRequest:
+      type: object
+      required:
+        - vehicle_id
+        - origin
+        - destination
+        - current_location
+        - max_driver_pickup_detour_meters
+        - idempotency_key
+      properties:
+        vehicle_id:
+          type: string
+        origin:
+          $ref: '#/components/schemas/Location'
+        destination:
+          $ref: '#/components/schemas/Location'
+        current_location:
+          $ref: '#/components/schemas/Location'
+        max_driver_pickup_detour_meters:
+          type: integer
+        idempotency_key:
+          type: string
+    DriverSessionHeartbeatRequest:
+      type: object
+      required: [current_location]
+      properties:
+        current_location:
+          $ref: '#/components/schemas/Location'
+    DriverSessionStateTransitionRequest:
+      type: object
+      required: [state]
+      properties:
+        state:
+          $ref: '#/components/schemas/DriverSessionState'
+    CreateTripDemandRequest:
+      type: object
+      required:
+        - requested_origin
+        - requested_destination
+        - women_drivers_only
+        - max_walk_to_pickup_meters
+        - max_walk_from_dropoff_meters
+        - idempotency_key
+      properties:
+        requested_origin:
+          $ref: '#/components/schemas/Location'
+        requested_destination:
+          $ref: '#/components/schemas/Location'
+        women_drivers_only:
+          type: boolean
+        max_walk_to_pickup_meters:
+          type: integer
+        max_walk_from_dropoff_meters:
+          type: integer
+        idempotency_key:
+          type: string
+    CreateTripDemandResponse:
+      type: object
+      required: [demand]
+      properties:
+        demand:
+          $ref: '#/components/schemas/TripDemand'
+        offer:
+          allOf:
+            - $ref: '#/components/schemas/RideOffer'
+          nullable: true
+    RideBookingStateTransitionRequest:
+      type: object
+      required: [state]
+      properties:
+        state:
+          $ref: '#/components/schemas/RideBookingState'
+    CreateReviewRequest:
+      type: object
+      required: [rating, comment]
+      properties:
+        rating:
+          type: integer
+        comment:
+          type: string

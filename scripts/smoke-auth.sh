@@ -30,9 +30,9 @@ curl -sS \
   -d '{
     "display_name": "Andrea",
     "preferences": {
-      "max_walk_to_pickup_meters": 400,
-      "max_walk_from_dropoff_meters": 400,
-      "max_driver_pickup_detour_meters": 1200
+      "walk_to_pickup": "medium",
+      "walk_from_dropoff": "medium",
+      "driver_pickup_detour": "medium"
     }
   }' \
   "${API_BASE_URL}/v1/profile"

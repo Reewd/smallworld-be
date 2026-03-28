@@ -24,6 +24,10 @@ type UpsertProfileInput struct {
 }
 
 func (s *ProfileService) UpsertAuthenticated(ctx context.Context, authSubject string, input UpsertProfileInput) (domain.User, error) {
+	if !input.Preferences.Validate() {
+		return domain.User{}, domain.ErrInvalidUserPreferences
+	}
+
 	user, err := s.users.FindByAuthSubject(ctx, authSubject)
 	switch err {
 	case nil:

@@ -66,9 +66,9 @@ func TestAuthMeReturnsNeedsVerificationWhenUserExistsWithoutVerification(t *test
 	if _, err := services.Profile.UpsertAuthenticated(context.Background(), "auth-subject", service.UpsertProfileInput{
 		DisplayName: "Andrea",
 		Preferences: domain.UserPreferences{
-			MaxWalkToPickupMeters:       300,
-			MaxWalkFromDropoffMeters:    300,
-			MaxDriverPickupDetourMeters: 1000,
+			WalkToPickup:       domain.PreferenceLevelMedium,
+			WalkFromDropoff:    domain.PreferenceLevelMedium,
+			DriverPickupDetour: domain.PreferenceLevelMedium,
 		},
 	}); err != nil {
 		t.Fatalf("upsert profile: %v", err)
@@ -139,9 +139,9 @@ func TestAuthMeReturnsVerificationStateForExistingUser(t *testing.T) {
 			user, err := services.Profile.UpsertAuthenticated(context.Background(), "auth-subject", service.UpsertProfileInput{
 				DisplayName: "Andrea",
 				Preferences: domain.UserPreferences{
-					MaxWalkToPickupMeters:       300,
-					MaxWalkFromDropoffMeters:    300,
-					MaxDriverPickupDetourMeters: 1000,
+					WalkToPickup:       domain.PreferenceLevelMedium,
+					WalkFromDropoff:    domain.PreferenceLevelMedium,
+					DriverPickupDetour: domain.PreferenceLevelMedium,
 				},
 			})
 			if err != nil {
@@ -218,7 +218,11 @@ func TestWebSocketRoutePassesResolvedUserIDToHub(t *testing.T) {
 		ID:          "user_1",
 		AuthSubject: "auth-subject",
 		DisplayName: "Andrea",
-		Preferences: domain.UserPreferences{MaxWalkToPickupMeters: 300, MaxWalkFromDropoffMeters: 300, MaxDriverPickupDetourMeters: 1000},
+		Preferences: domain.UserPreferences{
+			WalkToPickup:       domain.PreferenceLevelMedium,
+			WalkFromDropoff:    domain.PreferenceLevelMedium,
+			DriverPickupDetour: domain.PreferenceLevelMedium,
+		},
 	}
 	savedUser, err := services.Profile.UpsertAuthenticated(context.Background(), "auth-subject", structToProfileInput(user))
 	if err != nil {
@@ -268,9 +272,9 @@ func TestTripDemandCreateReturnsStreamlinedServiceError(t *testing.T) {
 	user, err := services.Profile.UpsertAuthenticated(context.Background(), "auth-subject", service.UpsertProfileInput{
 		DisplayName: "Andrea",
 		Preferences: domain.UserPreferences{
-			MaxWalkToPickupMeters:       300,
-			MaxWalkFromDropoffMeters:    300,
-			MaxDriverPickupDetourMeters: 1000,
+			WalkToPickup:       domain.PreferenceLevelMedium,
+			WalkFromDropoff:    domain.PreferenceLevelMedium,
+			DriverPickupDetour: domain.PreferenceLevelMedium,
 		},
 	})
 	if err != nil {
@@ -326,9 +330,9 @@ func TestRequestLoggingIncludesDebugStartAndResolvedUserID(t *testing.T) {
 	user, err := services.Profile.UpsertAuthenticated(context.Background(), "auth-subject", service.UpsertProfileInput{
 		DisplayName: "Andrea",
 		Preferences: domain.UserPreferences{
-			MaxWalkToPickupMeters:       300,
-			MaxWalkFromDropoffMeters:    300,
-			MaxDriverPickupDetourMeters: 1000,
+			WalkToPickup:       domain.PreferenceLevelMedium,
+			WalkFromDropoff:    domain.PreferenceLevelMedium,
+			DriverPickupDetour: domain.PreferenceLevelMedium,
 		},
 	})
 	if err != nil {
@@ -391,6 +395,26 @@ func TestRequestLoggingDoesNotLeakRequestBody(t *testing.T) {
 	}
 	if strings.Contains(output, "super-secret-body") {
 		t.Fatalf("expected request body to stay out of logs, got %s", output)
+	}
+}
+
+func TestProfileUpsertRejectsInvalidPreferenceLevel(t *testing.T) {
+	server := NewServer(newTestServices(t), staticAuthVerifier{}, &fakeWebSocketHub{}, true, discardLogger())
+	req := httptest.NewRequest(http.MethodPost, "/v1/profile", strings.NewReader(`{
+		"display_name":"Andrea",
+		"preferences":{
+			"walk_to_pickup":"extreme",
+			"walk_from_dropoff":"medium",
+			"driver_pickup_detour":"medium"
+		}
+	}`))
+	req.Header.Set("Authorization", "Bearer test-token")
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
