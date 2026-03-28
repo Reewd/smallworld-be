@@ -17,6 +17,15 @@ type RequestIdentity struct {
 	UserID   string `json:"user_id,omitempty"`
 }
 
+type onboardingState string
+
+const (
+	onboardingStateNeedsProfile        onboardingState = "needs_profile"
+	onboardingStateNeedsVerification   onboardingState = "needs_verification"
+	onboardingStateVerificationPending onboardingState = "verification_pending"
+	onboardingStateReady               onboardingState = "ready"
+)
+
 type identityContextKey struct{}
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
@@ -106,6 +115,8 @@ func currentIdentity(r *http.Request) (RequestIdentity, error) {
 }
 
 type authBootstrapResponse struct {
-	Auth ports.AuthIdentity `json:"auth"`
-	User *domain.User       `json:"user,omitempty"`
+	Auth            ports.AuthIdentity           `json:"auth"`
+	User            *domain.User                 `json:"user"`
+	Verification    *domain.IdentityVerification `json:"verification"`
+	OnboardingState onboardingState              `json:"onboarding_state"`
 }

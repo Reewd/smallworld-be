@@ -9,6 +9,7 @@ import (
 
 type Services struct {
 	Profile       *service.ProfileService
+	Verification  *service.VerificationService
 	DevBootstrap  *service.DevBootstrapService
 	Vehicle       *service.VehicleService
 	DriverSession *service.DriverSessionService
@@ -42,6 +43,7 @@ type Dependencies struct {
 func NewServices(deps Dependencies) Services {
 	return Services{
 		Profile:       service.NewProfileService(deps.Users, deps.IDGen),
+		Verification:  service.NewVerificationService(deps.Verifications),
 		DevBootstrap:  service.NewDevBootstrapService(deps.Users, deps.Verifications, deps.Vehicles, deps.IDGen),
 		Vehicle:       service.NewVehicleService(deps.Vehicles, deps.IDGen),
 		DriverSession: service.NewDriverSessionService(deps.Sessions, deps.Verifications, deps.Vehicles, deps.Routing, deps.Idempotency, deps.DriverPresence, deps.IDGen),

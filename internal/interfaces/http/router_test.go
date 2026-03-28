@@ -22,6 +22,170 @@ import (
 	"smallworld/internal/ports"
 )
 
+func TestAuthMeReturnsNeedsProfileForAuthenticatedUserWithoutBackendProfile(t *testing.T) {
+	server := NewServer(newTestServices(t), staticAuthVerifier{}, &fakeWebSocketHub{}, true, discardLogger())
+	req := httptest.NewRequest(http.MethodGet, "/v1/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var body struct {
+		Auth struct {
+			Subject  string `json:"subject"`
+			Provider string `json:"provider"`
+		} `json:"auth"`
+		User            *domain.User                 `json:"user"`
+		Verification    *domain.IdentityVerification `json:"verification"`
+		OnboardingState string                       `json:"onboarding_state"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if body.Auth.Subject != "auth-subject" || body.Auth.Provider != "firebase" {
+		t.Fatalf("auth = %#v", body.Auth)
+	}
+	if body.User != nil {
+		t.Fatalf("expected nil user, got %#v", body.User)
+	}
+	if body.Verification != nil {
+		t.Fatalf("expected nil verification, got %#v", body.Verification)
+	}
+	if body.OnboardingState != string(onboardingStateNeedsProfile) {
+		t.Fatalf("onboarding_state = %q", body.OnboardingState)
+	}
+}
+
+func TestAuthMeReturnsNeedsVerificationWhenUserExistsWithoutVerification(t *testing.T) {
+	services, _ := newTestServicesWithStore(t)
+	if _, err := services.Profile.UpsertAuthenticated(context.Background(), "auth-subject", service.UpsertProfileInput{
+		DisplayName: "Andrea",
+		Preferences: domain.UserPreferences{
+			MaxWalkToPickupMeters:       300,
+			MaxWalkFromDropoffMeters:    300,
+			MaxDriverPickupDetourMeters: 1000,
+		},
+	}); err != nil {
+		t.Fatalf("upsert profile: %v", err)
+	}
+
+	server := NewServer(services, staticAuthVerifier{}, &fakeWebSocketHub{}, true, discardLogger())
+	req := httptest.NewRequest(http.MethodGet, "/v1/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var body struct {
+		User            *domain.User                 `json:"user"`
+		Verification    *domain.IdentityVerification `json:"verification"`
+		OnboardingState string                       `json:"onboarding_state"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if body.User == nil {
+		t.Fatalf("expected user to be populated")
+	}
+	if body.Verification != nil {
+		t.Fatalf("expected nil verification, got %#v", body.Verification)
+	}
+	if body.OnboardingState != string(onboardingStateNeedsVerification) {
+		t.Fatalf("onboarding_state = %q", body.OnboardingState)
+	}
+}
+
+func TestAuthMeReturnsVerificationStateForExistingUser(t *testing.T) {
+	tests := []struct {
+		name          string
+		verification  domain.IdentityVerification
+		expectedState string
+	}{
+		{
+			name: "pending",
+			verification: domain.IdentityVerification{
+				Status:         domain.VerificationPending,
+				Provider:       "kyc_vendor",
+				ProviderRef:    "ref_1",
+				VerifiedGender: domain.GenderUnknown,
+			},
+			expectedState: string(onboardingStateVerificationPending),
+		},
+		{
+			name: "verified",
+			verification: domain.IdentityVerification{
+				Status:         domain.VerificationVerified,
+				Provider:       "kyc_vendor",
+				ProviderRef:    "ref_2",
+				VerifiedGender: domain.GenderFemale,
+			},
+			expectedState: string(onboardingStateReady),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			services, store := newTestServicesWithStore(t)
+			user, err := services.Profile.UpsertAuthenticated(context.Background(), "auth-subject", service.UpsertProfileInput{
+				DisplayName: "Andrea",
+				Preferences: domain.UserPreferences{
+					MaxWalkToPickupMeters:       300,
+					MaxWalkFromDropoffMeters:    300,
+					MaxDriverPickupDetourMeters: 1000,
+				},
+			})
+			if err != nil {
+				t.Fatalf("upsert profile: %v", err)
+			}
+
+			verification := tt.verification
+			verification.UserID = user.ID
+			if err := store.SaveVerification(context.Background(), verification); err != nil {
+				t.Fatalf("save verification: %v", err)
+			}
+
+			server := NewServer(services, staticAuthVerifier{}, &fakeWebSocketHub{}, true, discardLogger())
+			req := httptest.NewRequest(http.MethodGet, "/v1/auth/me", nil)
+			req.Header.Set("Authorization", "Bearer test-token")
+			rec := httptest.NewRecorder()
+
+			server.Routes().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+			}
+
+			var body struct {
+				Verification    *domain.IdentityVerification `json:"verification"`
+				OnboardingState string                       `json:"onboarding_state"`
+			}
+			if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+
+			if body.Verification == nil {
+				t.Fatalf("expected verification to be populated")
+			}
+			if body.Verification.Status != verification.Status {
+				t.Fatalf("verification.status = %q", body.Verification.Status)
+			}
+			if body.OnboardingState != tt.expectedState {
+				t.Fatalf("onboarding_state = %q", body.OnboardingState)
+			}
+		})
+	}
+}
+
 func TestDevBootstrapRouteDisabledOutsideEmulatorMode(t *testing.T) {
 	server := NewServer(newTestServices(t), staticAuthVerifier{}, &fakeWebSocketHub{}, false, discardLogger())
 	req := httptest.NewRequest(http.MethodPost, "/v1/dev/me/bootstrap", nil)
@@ -278,9 +442,16 @@ func (h *fakeWebSocketHub) ServeHTTP(w http.ResponseWriter, _ *http.Request, use
 func newTestServices(t *testing.T) application.Services {
 	t.Helper()
 
+	services, _ := newTestServicesWithStore(t)
+	return services
+}
+
+func newTestServicesWithStore(t *testing.T) (application.Services, *memory.Store) {
+	t.Helper()
+
 	store := memory.NewStore()
 	idg := &foundation.AtomicIDGenerator{}
-	return application.NewServices(application.Dependencies{
+	services := application.NewServices(application.Dependencies{
 		Users:           memory.Users{Store: store},
 		Verifications:   memory.Verifications{Store: store},
 		Vehicles:        memory.Vehicles{Store: store},
@@ -303,6 +474,7 @@ func newTestServices(t *testing.T) application.Services {
 			PickupSearchStepMeters:           250,
 		}),
 	})
+	return services, store
 }
 
 func structToProfileInput(user domain.User) service.UpsertProfileInput {

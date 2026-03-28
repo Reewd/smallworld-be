@@ -537,6 +537,7 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 			Subject:  identity.Subject,
 			Provider: identity.Provider,
 		},
+		OnboardingState: onboardingStateNeedsProfile,
 	}
 	if identity.UserID != "" {
 		user, err := s.services.Profile.FindByAuthSubject(r.Context(), identity.Subject)
@@ -545,6 +546,24 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		response.User = &user
+
+		verification, err := s.services.Verification.FindByUserID(r.Context(), user.ID)
+		switch {
+		case err == nil:
+			response.Verification = &verification
+			if verification.Status == domain.VerificationPending {
+				response.OnboardingState = onboardingStateVerificationPending
+			} else if verification.Status == domain.VerificationVerified {
+				response.OnboardingState = onboardingStateReady
+			} else {
+				response.OnboardingState = onboardingStateNeedsVerification
+			}
+		case errors.Is(err, domain.ErrVerificationRequired):
+			response.OnboardingState = onboardingStateNeedsVerification
+		default:
+			writeServiceError(w, err, http.StatusInternalServerError)
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, response)
 }
