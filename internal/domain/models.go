@@ -108,9 +108,6 @@ func (p *UserPreferences) UnmarshalJSON(data []byte) error {
 		WalkFromDropoff:    *raw.WalkFromDropoff,
 		DriverPickupDetour: *raw.DriverPickupDetour,
 	}
-	if !value.Validate() {
-		return ErrInvalidUserPreferences
-	}
 
 	*p = value
 	return nil

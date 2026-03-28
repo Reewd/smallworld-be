@@ -97,8 +97,7 @@ func (s *Server) handleDevBootstrap(w http.ResponseWriter, r *http.Request) {
 		VerifiedGender domain.Gender                     `json:"verified_gender"`
 		Vehicle        *service.DevBootstrapVehicleInput `json:"vehicle"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+	if !decodeJSONBody(w, r, &body) {
 		return
 	}
 
@@ -179,8 +178,7 @@ func (s *Server) handleProfileUpsert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input service.UpsertProfileInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+	if !decodeJSONBody(w, r, &input) {
 		return
 	}
 	user, err := s.services.Profile.UpsertAuthenticated(r.Context(), identity.Subject, input)
@@ -212,8 +210,7 @@ func (s *Server) handleVehicleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input service.CreateVehicleInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+	if !decodeJSONBody(w, r, &input) {
 		return
 	}
 	input.UserID = userID
@@ -246,8 +243,7 @@ func (s *Server) handleDriverSessionCreate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	var input service.StartDriverSessionInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+	if !decodeJSONBody(w, r, &input) {
 		return
 	}
 	input.UserID = userID
@@ -291,8 +287,7 @@ func (s *Server) handleDriverSessionActions(w http.ResponseWriter, r *http.Reque
 		var body struct {
 			CurrentLocation domain.Location `json:"current_location"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeError(w, http.StatusBadRequest, err)
+		if !decodeJSONBody(w, r, &body) {
 			return
 		}
 		session, err := s.services.DriverSession.HeartbeatOwned(r.Context(), userID, service.HeartbeatDriverSessionInput{
@@ -309,8 +304,7 @@ func (s *Server) handleDriverSessionActions(w http.ResponseWriter, r *http.Reque
 		var body struct {
 			State domain.DriverSessionState `json:"state"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeError(w, http.StatusBadRequest, err)
+		if !decodeJSONBody(w, r, &body) {
 			return
 		}
 		session, err := s.services.DriverSession.TransitionStateOwned(r.Context(), userID, service.TransitionDriverSessionStateInput{
@@ -334,8 +328,7 @@ func (s *Server) handleTripDemandCreate(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var input service.CreateTripDemandInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+	if !decodeJSONBody(w, r, &input) {
 		return
 	}
 	input.RiderID = userID
@@ -468,8 +461,7 @@ func (s *Server) handleBookingTransition(w http.ResponseWriter, r *http.Request)
 	var body struct {
 		State domain.RideBookingState `json:"state"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+	if !decodeJSONBody(w, r, &body) {
 		return
 	}
 	booking, err := s.services.Booking.TransitionForActor(r.Context(), userID, bookingID, body.State)
@@ -495,8 +487,7 @@ func (s *Server) handleReviewCreate(w http.ResponseWriter, r *http.Request) {
 		Rating  int    `json:"rating"`
 		Comment string `json:"comment"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+	if !decodeJSONBody(w, r, &body) {
 		return
 	}
 	review, err := s.services.Review.CreateForActor(r.Context(), bookingID, userID, body.Rating, body.Comment)
@@ -574,9 +565,30 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
-func writeError(w http.ResponseWriter, status int, err error) {
-	recordResponseError(w, err.Error(), err)
-	writeJSON(w, status, map[string]string{"error": err.Error()})
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any) bool {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(dst); err != nil {
+		writeRequestError(w, http.StatusBadRequest, "invalid request body", err)
+		return false
+	}
+
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			err = errors.New("multiple JSON values in request body")
+		}
+		writeRequestError(w, http.StatusBadRequest, "invalid request body", err)
+		return false
+	}
+
+	return true
+}
+
+func writeRequestError(w http.ResponseWriter, status int, message string, err error) {
+	recordResponseError(w, message, err)
+	writeJSON(w, status, map[string]string{"error": message})
 }
 
 func writeServiceError(w http.ResponseWriter, err error, defaultStatus int) {

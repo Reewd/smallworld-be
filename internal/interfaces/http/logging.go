@@ -108,7 +108,7 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 		if responseWriter.errorMessage != "" {
 			fields = append(fields, "error", responseWriter.errorMessage)
 		}
-		if status >= http.StatusInternalServerError && responseWriter.internalError != "" && responseWriter.internalError != responseWriter.errorMessage {
+		if status >= http.StatusBadRequest && responseWriter.internalError != "" && responseWriter.internalError != responseWriter.errorMessage {
 			fields = append(fields, "cause", responseWriter.internalError)
 		}
 

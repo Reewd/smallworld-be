@@ -393,8 +393,73 @@ func TestRequestLoggingDoesNotLeakRequestBody(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
+	var body map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["error"] != "invalid request body" {
+		t.Fatalf("error = %q", body["error"])
+	}
 	if strings.Contains(output, "super-secret-body") {
 		t.Fatalf("expected request body to stay out of logs, got %s", output)
+	}
+	if !strings.Contains(output, `"cause":"unexpected EOF"`) {
+		t.Fatalf("expected decoder cause in logs, got %s", output)
+	}
+}
+
+func TestProfileUpsertRejectsUnknownFieldWithSanitizedError(t *testing.T) {
+	server := NewServer(newTestServices(t), staticAuthVerifier{}, &fakeWebSocketHub{}, true, discardLogger())
+	req := httptest.NewRequest(http.MethodPost, "/v1/profile", strings.NewReader(`{
+		"display_name":"Andrea",
+		"preferences":{
+			"walk_to_pickup":"medium",
+			"walk_from_dropoff":"medium",
+			"driver_pickup_detour":"medium"
+		},
+		"unknown":"value"
+	}`))
+	req.Header.Set("Authorization", "Bearer test-token")
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["error"] != "invalid request body" {
+		t.Fatalf("error = %q", body["error"])
+	}
+}
+
+func TestProfileUpsertRejectsTrailingJSONWithSanitizedError(t *testing.T) {
+	server := NewServer(newTestServices(t), staticAuthVerifier{}, &fakeWebSocketHub{}, true, discardLogger())
+	req := httptest.NewRequest(http.MethodPost, "/v1/profile", strings.NewReader(`{
+		"display_name":"Andrea",
+		"preferences":{
+			"walk_to_pickup":"medium",
+			"walk_from_dropoff":"medium",
+			"driver_pickup_detour":"medium"
+		}
+	}{"extra":true}`))
+	req.Header.Set("Authorization", "Bearer test-token")
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["error"] != "invalid request body" {
+		t.Fatalf("error = %q", body["error"])
 	}
 }
 
@@ -415,6 +480,13 @@ func TestProfileUpsertRejectsInvalidPreferenceLevel(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["error"] != "invalid user preferences" {
+		t.Fatalf("error = %q", body["error"])
 	}
 }
 
