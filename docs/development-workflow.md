@@ -16,7 +16,7 @@ Most feature work becomes easier once you map it onto the actual request path us
 3. A thin handler decodes input, resolves the current user or identity, and calls one service method.
 4. The service in `internal/application/service` loads and persists state through `ports`.
 5. Domain rules from [internal/domain/policies.go](../internal/domain/policies.go) and sentinel errors from [internal/domain/errors.go](../internal/domain/errors.go) drive business decisions.
-6. The handler returns JSON through `writeJSON`, `writeError`, or `writeServiceError`.
+6. The handler returns JSON through `writeJSON`, `writeRequestError`, or `writeServiceError`.
 
 When you understand that path, it becomes clear where a change belongs and where it does not.
 
@@ -163,9 +163,10 @@ The repo already has a clear error pattern. Preserve it.
 
 ### In handlers
 
-- use `writeError` for direct request-decoding failures
+- use `decodeJSONBody` plus `writeRequestError` for direct request-decoding failures
 - use `writeServiceError` for service and domain errors
 - let `resolveServiceError` in [internal/interfaces/http/router.go](../internal/interfaces/http/router.go) decide status and public message
+- keep malformed JSON and unknown-field failures on the stable client message `invalid request body`
 - do not hand-roll route-specific status logic unless the route truly needs special handling
 
 ### In auth flow

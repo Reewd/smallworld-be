@@ -276,6 +276,7 @@ The backend uses a layered error strategy.
 - Services return those domain errors when callers need stable branching behavior, for example `ErrUnauthorized`, `ErrVerificationRequired`, `ErrVehicleRequired`, or entity-not-found errors.
 - Services may also return infrastructure errors directly when the failure is not a business decision, such as a routing provider failure or repository write failure.
 - The HTTP layer maps domain sentinel errors centrally through `resolveServiceError` and `writeServiceError` in [internal/interfaces/http/router.go](../internal/interfaces/http/router.go).
+- The HTTP layer handles JSON request-decoding failures separately through `decodeJSONBody` and `writeRequestError` in [internal/interfaces/http/router.go](../internal/interfaces/http/router.go).
 - Auth failures are handled before handlers run in [internal/interfaces/http/auth.go](../internal/interfaces/http/auth.go).
 
 Important consequences:
@@ -283,7 +284,10 @@ Important consequences:
 - Do not put HTTP status logic in services.
 - Prefer adding a domain sentinel error when multiple callers need to distinguish a business failure.
 - Let handlers call `writeServiceError` instead of re-implementing per-route status mapping.
+- Let handlers use `decodeJSONBody` for JSON bodies instead of returning raw decoder errors directly.
 - Internal server errors are intentionally masked to `internal server error` at the HTTP boundary.
+- Malformed or unknown JSON request bodies are intentionally sanitized to the stable client message `invalid request body`.
+- Request logs may still record the internal decode cause for `4xx` failures, but they must not log the raw request body.
 
 ## Runtime And Infrastructure
 
