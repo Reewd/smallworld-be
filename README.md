@@ -9,6 +9,7 @@ The backend is authoritative for:
 - route-aware matching between riders and active driver sessions
 - ride offer dispatch and acceptance
 - booking state and fare quote persistence
+- protected driver tracking visibility for matched riders only
 - reviews and realtime server-to-client events
 
 The Android app owns maps, turn-by-turn navigation UX, and client-side journey presentation.

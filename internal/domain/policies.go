@@ -82,6 +82,19 @@ func (b RideBooking) CanTransitionTo(next RideBookingState) bool {
 	}
 }
 
+func (b RideBooking) AllowsDriverTracking() bool {
+	switch b.State {
+	case RideBookingStateAssigned,
+		RideBookingStateRiderWalkingToPickup,
+		RideBookingStateDriverEnRouteToPickup,
+		RideBookingStatePickupReady,
+		RideBookingStateOnboard:
+		return true
+	default:
+		return false
+	}
+}
+
 func (s DriverSession) CanTransitionTo(next DriverSessionState) bool {
 	switch s.State {
 	case DriverSessionStateActive:

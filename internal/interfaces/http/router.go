@@ -422,7 +422,11 @@ func (s *Server) handleBookingRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/v1/bookings/")
-	if strings.Contains(path, "/") {
+	switch {
+	case strings.HasSuffix(path, "/driver-tracking"):
+		s.handleBookingDriverTracking(w, r, userID, strings.TrimSuffix(path, "/driver-tracking"))
+		return
+	case strings.Contains(path, "/"):
 		http.NotFound(w, r)
 		return
 	}
@@ -432,6 +436,19 @@ func (s *Server) handleBookingRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, booking)
+}
+
+func (s *Server) handleBookingDriverTracking(w http.ResponseWriter, r *http.Request, userID string, bookingID string) {
+	if bookingID == "" || strings.Contains(bookingID, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	tracking, err := s.services.Booking.GetDriverTrackingForRider(r.Context(), userID, bookingID)
+	if err != nil {
+		writeServiceError(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, tracking)
 }
 
 func (s *Server) handleBookingActions(w http.ResponseWriter, r *http.Request) {
@@ -615,7 +632,8 @@ func resolveServiceError(err error, defaultStatus int) resolvedServiceError {
 		errors.Is(err, domain.ErrDriverSessionNotFound),
 		errors.Is(err, domain.ErrDemandNotFound),
 		errors.Is(err, domain.ErrOfferNotFound),
-		errors.Is(err, domain.ErrBookingNotFound):
+		errors.Is(err, domain.ErrBookingNotFound),
+		errors.Is(err, domain.ErrDriverTrackingUnavailable):
 		return resolvedServiceError{
 			status:  http.StatusNotFound,
 			message: messageForKnownServiceError(err),
@@ -654,6 +672,8 @@ func messageForKnownServiceError(err error) string {
 		return "ride offer not found"
 	case errors.Is(err, domain.ErrBookingNotFound):
 		return "ride booking not found"
+	case errors.Is(err, domain.ErrDriverTrackingUnavailable):
+		return "driver tracking unavailable"
 	default:
 		return err.Error()
 	}

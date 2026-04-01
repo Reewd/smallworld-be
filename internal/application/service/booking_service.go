@@ -32,6 +32,29 @@ func NewBookingService(
 	}
 }
 
+func (s *BookingService) GetDriverTrackingForRider(ctx context.Context, riderUserID string, bookingID string) (domain.DriverTracking, error) {
+	booking, err := s.bookings.FindByID(ctx, bookingID)
+	if err != nil {
+		return domain.DriverTracking{}, err
+	}
+	if booking.RiderID != riderUserID {
+		return domain.DriverTracking{}, domain.ErrUnauthorized
+	}
+	if !booking.AllowsDriverTracking() {
+		return domain.DriverTracking{}, domain.ErrDriverTrackingUnavailable
+	}
+
+	session, err := s.sessions.FindByID(ctx, booking.DriverSessionID)
+	if err != nil {
+		return domain.DriverTracking{}, err
+	}
+	if session.State == domain.DriverSessionStateEnded {
+		return domain.DriverTracking{}, domain.ErrDriverTrackingUnavailable
+	}
+
+	return driverTrackingFromBookingAndSession(booking, session), nil
+}
+
 func (s *BookingService) Transition(ctx context.Context, bookingID string, next domain.RideBookingState) (domain.RideBooking, error) {
 	booking, err := s.bookings.FindByID(ctx, bookingID)
 	if err != nil {
@@ -91,4 +114,17 @@ func (s *BookingService) ListActiveForActor(ctx context.Context, actorUserID str
 		return nil, domain.ErrBookingNotFound
 	}
 	return bookings, nil
+}
+
+func driverTrackingFromBookingAndSession(booking domain.RideBooking, session domain.DriverSession) domain.DriverTracking {
+	return domain.DriverTracking{
+		BookingID:       booking.ID,
+		DriverSessionID: session.ID,
+		BookingState:    booking.State,
+		SessionState:    session.State,
+		CurrentLocation: session.CurrentLocation,
+		RoutePolyline:   session.RoutePolyline,
+		LastHeartbeatAt: session.LastHeartbeatAt,
+		UpdatedAt:       session.UpdatedAt,
+	}
 }

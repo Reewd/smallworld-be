@@ -36,6 +36,8 @@ func TestReconcilePausesStaleSessions(t *testing.T) {
 		routing.NewHaversineProvider(),
 		memory.Idempotency{Store: store},
 		nil,
+		memory.RideBookings{Store: store},
+		nil,
 		&foundation.AtomicIDGenerator{},
 	)
 

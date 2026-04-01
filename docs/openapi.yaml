@@ -447,6 +447,26 @@ paths:
           $ref: '#/components/responses/ErrorResponse'
         '404':
           $ref: '#/components/responses/ErrorResponse'
+  /v1/bookings/{id}/driver-tracking:
+    get:
+      tags: [Bookings]
+      summary: Get live driver tracking for the matched rider on a booking
+      description: |
+        Returns the current driver location and route polyline for an active booking.
+        Access is restricted to the rider assigned to that booking, and tracking is unavailable once the booking is terminal.
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+      responses:
+        '200':
+          description: Driver tracking snapshot for the matched rider
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverTracking'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
   /v1/bookings/{id}/state:
     post:
       tags: [Bookings]
@@ -886,6 +906,35 @@ components:
         vehicle_license_plate:
           type: string
         created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    DriverTracking:
+      type: object
+      required:
+        - booking_id
+        - driver_session_id
+        - booking_state
+        - session_state
+        - current_location
+        - last_heartbeat_at
+        - updated_at
+      properties:
+        booking_id:
+          type: string
+        driver_session_id:
+          type: string
+        booking_state:
+          $ref: '#/components/schemas/RideBookingState'
+        session_state:
+          $ref: '#/components/schemas/DriverSessionState'
+        current_location:
+          $ref: '#/components/schemas/Location'
+        route_polyline:
+          type: string
+        last_heartbeat_at:
           type: string
           format: date-time
         updated_at:

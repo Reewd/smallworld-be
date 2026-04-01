@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"smallworld/internal/application"
 	"smallworld/internal/application/service"
@@ -311,6 +312,64 @@ func TestTripDemandCreateReturnsStreamlinedServiceError(t *testing.T) {
 	}
 	if body["error"] != domain.ErrWomenOnlyRequiresVerifiedFemaleRider.Error() {
 		t.Fatalf("unexpected error message: %q", body["error"])
+	}
+}
+
+func TestBookingDriverTrackingReturnsProtectedSnapshotForMatchedRider(t *testing.T) {
+	services, store := newTestServicesWithStore(t)
+	user, err := services.Profile.UpsertAuthenticated(context.Background(), "auth-subject", service.UpsertProfileInput{
+		DisplayName: "Andrea",
+		Preferences: domain.UserPreferences{
+			WalkToPickup:       domain.PreferenceLevelMedium,
+			WalkFromDropoff:    domain.PreferenceLevelMedium,
+			DriverPickupDetour: domain.PreferenceLevelMedium,
+		},
+	})
+	if err != nil {
+		t.Fatalf("upsert profile: %v", err)
+	}
+
+	now := time.Now().UTC()
+	if err := store.SaveDriverSession(context.Background(), domain.DriverSession{
+		ID:              "ds_1",
+		DriverID:        "driver_1",
+		State:           domain.DriverSessionStateActive,
+		RoutePolyline:   "encoded-polyline",
+		CurrentLocation: domain.Location{Lat: 45.1, Lng: 9.1},
+		LastHeartbeatAt: now,
+		UpdatedAt:       now,
+	}); err != nil {
+		t.Fatalf("save session: %v", err)
+	}
+	if err := store.SaveRideBooking(context.Background(), domain.RideBooking{
+		ID:              "booking_1",
+		DriverSessionID: "ds_1",
+		RiderID:         user.ID,
+		DriverID:        "driver_1",
+		State:           domain.RideBookingStateAssigned,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}); err != nil {
+		t.Fatalf("save booking: %v", err)
+	}
+
+	server := NewServer(services, staticAuthVerifier{}, &fakeWebSocketHub{}, true, discardLogger())
+	req := httptest.NewRequest(http.MethodGet, "/v1/bookings/booking_1/driver-tracking", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var body domain.DriverTracking
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.BookingID != "booking_1" || body.RoutePolyline != "encoded-polyline" {
+		t.Fatalf("tracking = %#v", body)
 	}
 }
 

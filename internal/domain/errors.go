@@ -12,6 +12,7 @@ var (
 	ErrNoCandidateFound                     = errors.New("no matching driver candidate found")
 	ErrOfferNotFound                        = errors.New("ride offer not found")
 	ErrBookingNotFound                      = errors.New("ride booking not found")
+	ErrDriverTrackingUnavailable            = errors.New("driver tracking unavailable")
 	ErrInvalidUserPreferences               = errors.New("invalid user preferences")
 	ErrCapacityExceeded                     = errors.New("capacity exceeded")
 	ErrIdempotencyConflict                  = errors.New("idempotency conflict")

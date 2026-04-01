@@ -37,6 +37,8 @@ func TestDriverSessionGetCurrentForDriverPrefersActive(t *testing.T) {
 		stubRoutingProvider{},
 		memory.Idempotency{Store: store},
 		nil,
+		memory.RideBookings{Store: store},
+		nil,
 		&foundation.AtomicIDGenerator{},
 	)
 

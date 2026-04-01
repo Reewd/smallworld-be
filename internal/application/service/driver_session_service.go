@@ -17,6 +17,8 @@ type DriverSessionService struct {
 	routing       ports.RoutingProvider
 	idempotency   ports.IdempotencyRepository
 	presence      ports.DriverPresenceStore
+	bookings      ports.RideBookingRepository
+	realtime      ports.RealtimeHub
 	idg           foundation.IDGenerator
 }
 
@@ -27,6 +29,8 @@ func NewDriverSessionService(
 	routing ports.RoutingProvider,
 	idempotency ports.IdempotencyRepository,
 	presence ports.DriverPresenceStore,
+	bookings ports.RideBookingRepository,
+	realtime ports.RealtimeHub,
 	idg foundation.IDGenerator,
 ) *DriverSessionService {
 	return &DriverSessionService{
@@ -36,6 +40,8 @@ func NewDriverSessionService(
 		routing:       routing,
 		idempotency:   idempotency,
 		presence:      presence,
+		bookings:      bookings,
+		realtime:      realtime,
 		idg:           idg,
 	}
 }
@@ -153,6 +159,7 @@ func (s *DriverSessionService) Heartbeat(ctx context.Context, input HeartbeatDri
 			return domain.DriverSession{}, err
 		}
 	}
+	s.publishDriverTrackingUpdates(ctx, session)
 	return session, nil
 }
 
@@ -253,4 +260,21 @@ func (s *DriverSessionService) ReconcileStaleSessions(ctx context.Context, maxSt
 		}
 	}
 	return paused, nil
+}
+
+func (s *DriverSessionService) publishDriverTrackingUpdates(ctx context.Context, session domain.DriverSession) {
+	if s.bookings == nil || s.realtime == nil {
+		return
+	}
+
+	bookings, err := s.bookings.ListByDriverSessionID(ctx, session.ID)
+	if err != nil {
+		return
+	}
+	for _, booking := range bookings {
+		if !booking.AllowsDriverTracking() {
+			continue
+		}
+		_ = s.realtime.PublishToUser(ctx, booking.RiderID, "driver_tracking.updated", driverTrackingFromBookingAndSession(booking, session))
+	}
 }

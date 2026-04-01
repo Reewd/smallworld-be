@@ -208,6 +208,17 @@ type RideBooking struct {
 	UpdatedAt             time.Time        `json:"updated_at"`
 }
 
+type DriverTracking struct {
+	BookingID       string             `json:"booking_id"`
+	DriverSessionID string             `json:"driver_session_id"`
+	BookingState    RideBookingState   `json:"booking_state"`
+	SessionState    DriverSessionState `json:"session_state"`
+	CurrentLocation Location           `json:"current_location"`
+	RoutePolyline   string             `json:"route_polyline,omitempty"`
+	LastHeartbeatAt time.Time          `json:"last_heartbeat_at"`
+	UpdatedAt       time.Time          `json:"updated_at"`
+}
+
 type Review struct {
 	ID        string    `json:"id"`
 	BookingID string    `json:"booking_id"`

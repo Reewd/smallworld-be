@@ -46,7 +46,7 @@ func NewServices(deps Dependencies) Services {
 		Verification:  service.NewVerificationService(deps.Verifications),
 		DevBootstrap:  service.NewDevBootstrapService(deps.Users, deps.Verifications, deps.Vehicles, deps.IDGen),
 		Vehicle:       service.NewVehicleService(deps.Vehicles, deps.IDGen),
-		DriverSession: service.NewDriverSessionService(deps.Sessions, deps.Verifications, deps.Vehicles, deps.Routing, deps.Idempotency, deps.DriverPresence, deps.IDGen),
+		DriverSession: service.NewDriverSessionService(deps.Sessions, deps.Verifications, deps.Vehicles, deps.Routing, deps.Idempotency, deps.DriverPresence, deps.Bookings, deps.Realtime, deps.IDGen),
 		TripDemand:    service.NewTripDemandService(deps.Demands, deps.Verifications, deps.Idempotency, deps.Sessions, deps.Offers, deps.Bookings, deps.Vehicles, deps.Routing, deps.Pricing, deps.Push, deps.Realtime, deps.DriverPresence, deps.EphemeralOffers, deps.IDGen, deps.Matching),
 		Offer:         service.NewOfferService(deps.Offers, deps.Demands, deps.Sessions, deps.Bookings, deps.Vehicles, deps.Pricing, deps.Push, deps.Realtime, deps.OfferAcceptor, deps.EphemeralOffers, deps.IDGen),
 		Booking:       service.NewBookingService(deps.Bookings, deps.Offers, deps.Demands, deps.Sessions, deps.Realtime),

@@ -34,6 +34,8 @@ func TestHeartbeatOwnedRejectsWrongDriver(t *testing.T) {
 		stubRoutingProvider{},
 		memory.Idempotency{Store: store},
 		nil,
+		memory.RideBookings{Store: store},
+		nil,
 		&foundation.AtomicIDGenerator{},
 	)
 
@@ -80,6 +82,8 @@ func TestStartPersistsRoutePolyline(t *testing.T) {
 		stubRoutingProvider{},
 		memory.Idempotency{Store: store},
 		nil,
+		memory.RideBookings{Store: store},
+		nil,
 		&foundation.AtomicIDGenerator{},
 	)
 
@@ -97,6 +101,103 @@ func TestStartPersistsRoutePolyline(t *testing.T) {
 	if session.RoutePolyline != "encoded-polyline" {
 		t.Fatalf("RoutePolyline = %q", session.RoutePolyline)
 	}
+}
+
+func TestHeartbeatPublishesDriverTrackingOnlyToActiveMatchedRiders(t *testing.T) {
+	store := memory.NewStore()
+	now := time.Now().UTC()
+
+	if err := store.SaveDriverSession(context.Background(), domain.DriverSession{
+		ID:              "ds_1",
+		DriverID:        "driver_1",
+		State:           domain.DriverSessionStateActive,
+		RoutePolyline:   "encoded-polyline",
+		CurrentLocation: domain.Location{Lat: 45, Lng: 9},
+		LastHeartbeatAt: now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}); err != nil {
+		t.Fatalf("save session: %v", err)
+	}
+	if err := store.SaveRideBooking(context.Background(), domain.RideBooking{
+		ID:              "booking_active",
+		DriverSessionID: "ds_1",
+		RiderID:         "rider_1",
+		DriverID:        "driver_1",
+		State:           domain.RideBookingStateAssigned,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}); err != nil {
+		t.Fatalf("save active booking: %v", err)
+	}
+	if err := store.SaveRideBooking(context.Background(), domain.RideBooking{
+		ID:              "booking_completed",
+		DriverSessionID: "ds_1",
+		RiderID:         "rider_2",
+		DriverID:        "driver_1",
+		State:           domain.RideBookingStateCompleted,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}); err != nil {
+		t.Fatalf("save completed booking: %v", err)
+	}
+
+	realtime := &recordingRealtimeHub{}
+	svc := NewDriverSessionService(
+		memory.DriverSessions{Store: store},
+		memory.Verifications{Store: store},
+		memory.Vehicles{Store: store},
+		stubRoutingProvider{},
+		memory.Idempotency{Store: store},
+		nil,
+		memory.RideBookings{Store: store},
+		realtime,
+		&foundation.AtomicIDGenerator{},
+	)
+
+	session, err := svc.Heartbeat(context.Background(), HeartbeatDriverSessionInput{
+		SessionID:       "ds_1",
+		CurrentLocation: domain.Location{Lat: 45.001, Lng: 9.001},
+	})
+	if err != nil {
+		t.Fatalf("Heartbeat() error = %v", err)
+	}
+	if len(realtime.events) != 1 {
+		t.Fatalf("events = %#v", realtime.events)
+	}
+	event := realtime.events[0]
+	if event.userID != "rider_1" || event.eventType != "driver_tracking.updated" {
+		t.Fatalf("event = %#v", event)
+	}
+	tracking, ok := event.payload.(domain.DriverTracking)
+	if !ok {
+		t.Fatalf("payload type = %T", event.payload)
+	}
+	if tracking.BookingID != "booking_active" || tracking.DriverSessionID != "ds_1" {
+		t.Fatalf("tracking ids = %#v", tracking)
+	}
+	if tracking.CurrentLocation != session.CurrentLocation {
+		t.Fatalf("tracking.CurrentLocation = %#v session.CurrentLocation = %#v", tracking.CurrentLocation, session.CurrentLocation)
+	}
+}
+
+type recordedRealtimeEvent struct {
+	userID    string
+	eventType string
+	payload   any
+}
+
+type recordingRealtimeHub struct {
+	events []recordedRealtimeEvent
+}
+
+func (h *recordingRealtimeHub) PublishToUser(_ context.Context, userID string, eventType string, payload any) error {
+	h.events = append(h.events, recordedRealtimeEvent{
+		userID:    userID,
+		eventType: eventType,
+		payload:   payload,
+	})
+	return nil
 }
 
 type stubRoutingProvider struct{}
